@@ -1,3 +1,8 @@
+datasets/*
+MCSCC 163/*
+!MCSCC 163/*.ipynb
+!datasets/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
