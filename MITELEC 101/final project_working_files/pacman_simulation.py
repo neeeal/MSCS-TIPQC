@@ -13,6 +13,7 @@ class Maze:
         self.shared_corridors = set()
         self.walls = set()
         self.pellets = set()
+        self.shared_route_status = {}  # Tracks shared corridor status: UNLOCKED or LOCKED_BY_AGENT
         self._generate_maze()
 
     def _generate_maze(self):
@@ -42,6 +43,24 @@ class Maze:
             print(' '.join(row))
         print()
 
+    def lock(self, position, agent_name):
+        """Lock a shared corridor position for exclusive use by an agent"""
+        if position in self.shared_corridors:
+            self.shared_route_status[position] = f"LOCKED_BY_{agent_name}"
+            return True
+        return False
+
+    def unlock(self, position):
+        """Unlock a shared corridor position"""
+        if position in self.shared_route_status:
+            del self.shared_route_status[position]
+            return True
+        return False
+
+    def is_locked(self, position):
+        """Check if a position is currently locked"""
+        return position in self.shared_route_status
+
 # ====================== Agent Setup ======================
 
 class Agent:
@@ -56,6 +75,7 @@ class Agent:
         self.active = True
         self.negotiation_history = []  # For learning strategies
         self.learning_rate = 0.1  # Simple learning parameter
+        self.sensing_radius = 3  # For conflict pre-detection
 
     def move(self, direction, maze):
         x, y = self.pos
@@ -94,6 +114,45 @@ class Agent:
             'to': opponent.name
         }
         return proposal
+
+    def predict_next_move(self, direction, maze):
+        """Predict the next position based on current direction"""
+        x, y = self.pos
+        dx, dy = {'U': (-1, 0), 'D': (1, 0), 'L': (0, -1), 'R': (0, 1)}.get(direction, (0, 0))
+        nx, ny = x + dx, y + dy
+        
+        # Boundary and wall check
+        if 0 <= nx < maze.height and 0 <= ny < maze.width and (nx, ny) not in maze.walls:
+            return (nx, ny)
+        return self.pos
+
+    def detect_potential_conflicts(self, agents, maze):
+        """Detect potential conflicts within sensing radius"""
+        potential_conflicts = []
+        my_next_moves = ['U', 'D', 'L', 'R']
+        
+        for direction in my_next_moves:
+            my_next_pos = self.predict_next_move(direction, maze)
+            if my_next_pos == self.pos:  # Skip if we can't move there
+                continue
+                
+            for other_agent in agents:
+                if other_agent != self and other_agent.active:
+                    # Check if other agent is within sensing radius
+                    distance = math.sqrt((self.pos[0] - other_agent.pos[0])**2 +
+                                       (self.pos[1] - other_agent.pos[1])**2)
+                    if distance <= self.sensing_radius:
+                        # Check if other agent might move to same position
+                        for other_direction in ['U', 'D', 'L', 'R']:
+                            other_next_pos = other_agent.predict_next_move(other_direction, maze)
+                            if other_next_pos == my_next_pos and other_next_pos != other_agent.pos:
+                                potential_conflicts.append({
+                                    'position': my_next_pos,
+                                    'with_agent': other_agent,
+                                    'my_direction': direction,
+                                    'other_direction': other_direction
+                                })
+        return potential_conflicts
 
 # ====================== Ghost Setup ======================
 
@@ -142,8 +201,13 @@ class ConflictManager:
         self.successful_negotiations = 0
         self.waiting_times = defaultdict(int)
         self.multi_issue_negotiations = 0
+        self.priority_based_resolutions = 0
+        self.alternating_offer_resolutions = 0
+        self.conflict_log = []
+        self.negotiation_log = []
+        self.pre_detected_conflicts = 0
 
-    def negotiate(self, agents, proposed_positions):
+    def negotiate(self, agents, proposed_positions, maze):
         reverse_map = defaultdict(list)
         for agent, pos in proposed_positions.items():
             reverse_map[pos].append(agent)
@@ -155,14 +219,16 @@ class ConflictManager:
             else:
                 # Conflict detected
                 self.conflicts += 1
-                # Try multi-issue negotiation first
-                if self.multi_issue_negotiate(contenders, pos):
-                    self.multi_issue_negotiations += 1
-                    # If multi-issue succeeds, all agents agree on a resolution
-                    # For now, use simple resolution if multi-issue fails
-                    winner = self.resolve_conflict(contenders)
+                self.log_conflict_event(contenders, pos, 'position_conflict')
+                
+                # Choose negotiation strategy based on situation
+                if len(contenders) == 2:
+                    # For 2 agents, use alternating offers protocol
+                    winner = self.alternating_offer_negotiate(contenders, maze)
                 else:
+                    # For multiple agents, use priority-based resolution
                     winner = self.resolve_conflict(contenders)
+                
                 self.successful_negotiations += 1
                 for agent in contenders:
                     if agent == winner:
@@ -174,14 +240,137 @@ class ConflictManager:
         return resolved_positions
 
     def resolve_conflict(self, contenders):
-        # Simple resolution: higher score wins, else random
+        """Negotiation Strategy 1: Priority-based resolution (highest score wins)"""
+        self.priority_based_resolutions += 1
+        
+        # Log the conflict
+        conflict_record = {
+            'type': 'priority_based',
+            'contenders': [a.name for a in contenders],
+            'scores': [a.score for a in contenders],
+            'energies': [a.energy for a in contenders],
+            'timestamp': time.time()
+        }
+        self.conflict_log.append(conflict_record)
+        
+        # Higher score wins, else random among top scorers
         contenders.sort(key=lambda a: (a.score, a.energy), reverse=True)
         top = [a for a in contenders if a.score == contenders[0].score]
-        return random.choice(top)
+        winner = random.choice(top)
+        
+        # Log negotiation outcome
+        negotiation_record = {
+            'strategy': 'priority_based',
+            'winner': winner.name,
+            'contenders': [a.name for a in contenders],
+            'resolution': f"{winner.name} won based on score/energy priority"
+        }
+        self.negotiation_log.append(negotiation_record)
+        
+        return winner
+
+    def alternating_offer_negotiate(self, contenders, maze):
+        """Negotiation Strategy 2: Formal alternating offers protocol"""
+        self.alternating_offer_resolutions += 1
+        
+        if len(contenders) < 2:
+            return self.resolve_conflict(contenders)
+            
+        # Select two agents for negotiation
+        agent1, agent2 = random.sample(contenders, 2)
+        
+        # Message structure for alternating offers
+        messages = []
+        max_rounds = 3
+        current_round = 0
+        
+        # Agent1 makes initial offer
+        current_offer = {
+            'from': agent1.name,
+            'to': agent2.name,
+            'proposal': 'yield_position',
+            'compensation': 'future_pellet_share',
+            'round': current_round
+        }
+        messages.append(current_offer)
+        
+        while current_round < max_rounds:
+            # Evaluate utility of the offer for agent2
+            utility_agent2 = self.evaluate_offer_utility(current_offer, agent2, maze)
+            
+            if utility_agent2 > 0.5:  # Accept if utility is high enough
+                # Log successful negotiation
+                negotiation_record = {
+                    'strategy': 'alternating_offer',
+                    'winner': agent1.name,  # Agent1 gets the position
+                    'contenders': [agent1.name, agent2.name],
+                    'rounds': current_round + 1,
+                    'resolution': f"Accepted offer from {agent1.name} after {current_round + 1} rounds"
+                }
+                self.negotiation_log.append(negotiation_record)
+                return agent1
+            else:
+                # Agent2 makes counter-offer
+                current_round += 1
+                counter_offer = {
+                    'from': agent2.name,
+                    'to': agent1.name,
+                    'proposal': 'yield_position',
+                    'compensation': 'immediate_energy_boost',
+                    'round': current_round
+                }
+                messages.append(counter_offer)
+                
+                # Evaluate utility for agent1
+                utility_agent1 = self.evaluate_offer_utility(counter_offer, agent1, maze)
+                
+                if utility_agent1 > 0.5:
+                    # Log successful negotiation
+                    negotiation_record = {
+                        'strategy': 'alternating_offer',
+                        'winner': agent2.name,  # Agent2 gets the position
+                        'contenders': [agent1.name, agent2.name],
+                        'rounds': current_round + 1,
+                        'resolution': f"Accepted counter-offer from {agent2.name} after {current_round + 1} rounds"
+                    }
+                    self.negotiation_log.append(negotiation_record)
+                    return agent2
+        
+        # If no agreement reached, fall back to priority-based
+        negotiation_record = {
+            'strategy': 'alternating_offer',
+            'winner': 'fallback',
+            'contenders': [agent1.name, agent2.name],
+            'rounds': current_round,
+            'resolution': "No agreement reached, falling back to priority-based"
+        }
+        self.negotiation_log.append(negotiation_record)
+        return self.resolve_conflict([agent1, agent2])
+
+    def evaluate_offer_utility(self, offer, agent, maze):
+        """Evaluate the utility of an offer for an agent"""
+        # Simple utility calculation based on agent state
+        utility = 0.0
+        
+        if offer['proposal'] == 'yield_position':
+            # If agent is being asked to yield, evaluate based on energy and score
+            if agent.energy < 30:
+                utility += 0.3  # Low energy agents more likely to yield
+            if agent.score > 50:
+                utility -= 0.2  # High score agents less likely to yield
+                
+        if offer['compensation'] == 'future_pellet_share':
+            utility += 0.2
+        elif offer['compensation'] == 'immediate_energy_boost':
+            utility += 0.4
+            
+        # Add some randomness
+        utility += random.uniform(-0.2, 0.2)
+        
+        return max(0.0, min(1.0, utility))
 
     def multi_issue_negotiate(self, contenders, pos):
-        # Attempt multi-issue negotiation among contenders
-        # For example, agents can trade corridor access for pellet sharing
+        """Attempt multi-issue negotiation among contenders"""
         if len(contenders) < 2:
             return False
 
@@ -198,6 +387,18 @@ class ConflictManager:
             agent2.learn_from_negotiation(True, agent1, 'corridor_access')
             return True
         return False
+
+    def log_conflict_event(self, agents, position, conflict_type):
+        """Log a conflict event with comprehensive details"""
+        conflict_record = {
+            'timestamp': time.time(),
+            'position': position,
+            'type': conflict_type,
+            'agents_involved': [a.name for a in agents],
+            'agent_scores': [a.score for a in agents],
+            'agent_energies': [a.energy for a in agents]
+        }
+        self.conflict_log.append(conflict_record)
 
 # ====================== Simulation Logic ======================
 
@@ -268,7 +469,7 @@ class PacmanSimulation:
                     direction = random.choice(['U', 'D', 'L', 'R'])
                     proposed_positions[agent] = agent.move(direction, self.maze)
 
-            resolved = self.manager.negotiate(active_agents, proposed_positions)
+            resolved = self.manager.negotiate(active_agents, proposed_positions, self.maze)
             for agent, pos in resolved.items():
                 agent.pos = pos
                 if pos in self.maze.pellets:
@@ -309,6 +510,9 @@ class PacmanSimulation:
         print(f"Conflicts: {self.manager.conflicts}")
         print(f"Successful Negotiations: {self.manager.successful_negotiations}")
         print(f"Multi-issue Negotiations: {self.manager.multi_issue_negotiations}")
+        print(f"Priority-based Resolutions: {self.manager.priority_based_resolutions}")
+        print(f"Alternating Offer Resolutions: {self.manager.alternating_offer_resolutions}")
+        print(f"Pre-detected Conflicts: {self.manager.pre_detected_conflicts}")
         
         active_count = len(active_agents)
         if active_count > 0:
@@ -321,6 +525,20 @@ class PacmanSimulation:
                 mean_score = sum(scores) / len(scores)
                 fairness = 1 - (sum(abs(s - mean_score) for s in scores) / (2 * len(scores) * mean_score)) if mean_score > 0 else 1
                 print(f"Fairness Index: {fairness:.3f}")
+        
+        # Detailed logging summary
+        print(f"\n--- Detailed Logging ---")
+        print(f"Total Conflict Events: {len(self.manager.conflict_log)}")
+        print(f"Total Negotiation Events: {len(self.manager.negotiation_log)}")
+        
+        # Show negotiation strategy distribution
+        strategy_counts = {}
+        for log in self.manager.negotiation_log:
+            strategy = log['strategy']
+            strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
+        
+        for strategy, count in strategy_counts.items():
+            print(f"  {strategy}: {count} negotiations")
         
         print("=============================")
 
