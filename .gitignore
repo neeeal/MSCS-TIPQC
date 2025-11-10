@@ -1,7 +1,9 @@
 datasets/*
-MCSCC 163/*
+MCSCC 163/s2s*
 !MCSCC 163/*.ipynb
 !datasets/.gitkeep
+*ch.md
+*old_models/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
