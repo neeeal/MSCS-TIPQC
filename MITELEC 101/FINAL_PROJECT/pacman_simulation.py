@@ -104,6 +104,46 @@ class Agent:
                 'content': {'action': 'YOU_GO_FIRST', 'compensation': 'immediate_energy_boost', 'waits': 0}
             }
 
+# ====================== Ghost Setup (RE-INTRODUCED) ======================
+
+class Ghost:
+    def __init__(self, name, symbol, pos):
+        self.name = name
+        self.symbol = symbol
+        self.pos = pos
+        self.active = True
+
+    def move(self, maze, agents):
+        x, y = self.pos
+        directions = ['U', 'D', 'L', 'R']
+        random.shuffle(directions)
+        
+        # Simple ghost movement: chase nearest agent or random
+        min_dist = float('inf')
+        best_pos = None
+        
+        for dir in directions:
+            dx, dy = {'U': (-1, 0), 'D': (1, 0), 'L': (0, -1), 'R': (0, 1)}[dir]
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < maze.height and 0 <= ny < maze.width and (nx, ny) not in maze.walls:
+                for agent in agents:
+                    if agent.active:
+                        dist = math.sqrt((nx - agent.pos[0])**2 + (ny - agent.pos[1])**2)
+                        if dist < min_dist:
+                            min_dist = dist
+                            best_pos = (nx, ny)
+
+        if best_pos:
+            return best_pos
+        
+        # Fallback to random if no clear path/target
+        for dir in directions:
+             dx, dy = {'U': (-1, 0), 'D': (1, 0), 'L': (0, -1), 'R': (0, 1)}[dir]
+             nx, ny = x + dx, y + dy
+             if 0 <= nx < maze.height and 0 <= ny < maze.width and (nx, ny) not in maze.walls:
+                 return (nx, ny)
+        
+        return self.pos
 
 # ====================== Negotiation & Conflict Handling (Modified to remove verbose prints) ======================
 
@@ -291,9 +331,28 @@ class PacmanSimulation:
             Agent("PacmanB", "B", (self.maze.height - 1, 0)),
             Agent("PacmanC", "C", (0, self.maze.width - 1))
         ]
-        self.ghosts = [] 
+        # RE-INTRODUCED GHOSTS
+        self.ghosts = [
+            Ghost("Ghost1", "G", (self.maze.height // 2 - 1, self.maze.width // 2 - 1)),
+            Ghost("Ghost2", "H", (self.maze.height // 2 + 1, self.maze.width // 2 + 1))
+        ]
+        self.ghost_log = [] # New log for ghost activity
         self.turns = 250
         self.trial_num = trial_num
+        self.energy_loss_ghost = -20 # Ghost attack penalty
+
+    def log_ghost_event(self, time, ghost, agent=None, type='Move'):
+        event = {
+            'time': time,
+            'ghost_name': ghost.name,
+            'ghost_pos': ghost.pos,
+            'event_type': type
+        }
+        if agent:
+            event['agent_name'] = agent.name
+            event['agent_energy_after'] = agent.energy
+        self.ghost_log.append(event)
+
 
     def run(self):
         
@@ -304,6 +363,22 @@ class PacmanSimulation:
                 break
             
             self.manager.set_time(t)
+
+            # --- GHOST MOVEMENT AND ATTACK LOGIC RE-IMPLEMENTED ---
+            for ghost in self.ghosts:
+                if ghost.active:
+                    new_pos = ghost.move(self.maze, active_agents)
+                    self.log_ghost_event(t, ghost, type='Move_Start') # Log current position before move
+                    ghost.pos = new_pos
+                    self.log_ghost_event(t, ghost, type='Move_End')   # Log new position
+                    
+                    # Check for agent capture
+                    for agent in active_agents:
+                        if agent.pos == ghost.pos and agent.active:
+                            agent.update_energy(self.energy_loss_ghost)
+                            self.log_ghost_event(t, ghost, agent, type='Capture')
+                            
+            # --- END GHOST LOGIC ---
 
             proposed_positions = {}
             for agent in active_agents:
@@ -393,6 +468,7 @@ class PacmanSimulation:
         
         metrics['conflict_log'] = self.manager.conflict_log
         metrics['negotiation_log'] = self.manager.negotiation_log
+        metrics['ghost_log'] = self.ghost_log # Include new ghost log
         
         return metrics
 
@@ -400,6 +476,7 @@ class PacmanSimulation:
 
 def write_csv_report(filename, header, data, mode='w'):
     """Writes or appends data to a CSV file."""
+    if not data: return # Skip writing empty files
     with open(filename, mode, newline='') as f:
         writer = csv.DictWriter(f, fieldnames=header)
         if mode == 'w':
@@ -409,19 +486,17 @@ def write_csv_report(filename, header, data, mode='w'):
 def run_experiment(strategy, num_trials, final_summary_writer):
     """Runs a simulation strategy multiple times and generates CSV reports."""
     
-    # --- FILE SETUP ---
     STRATEGY_SHORT = 'AO' if strategy == 'ALTERNATING_OFFER' else 'PB'
     MASTER_CSV_FILENAME = f"MITELEC101_Trial_Summary_{STRATEGY_SHORT}.csv"
     DETAIL_DIR = f"MITELEC101_{STRATEGY_SHORT}_Conflict_Details"
     
     os.makedirs(DETAIL_DIR, exist_ok=True)
     
-    # Headers for CSV files
     MASTER_HEADER = ['trial_num', 'avg_wait_time', 'access_fairness_index', 'conflicts']
     CONFLICT_DETAIL_HEADER = ['time', 'position', 'type', 'agents_involved', 'agent_scores']
     NEGOTIATION_DETAIL_HEADER = ['time', 'strategy', 'loser', 'winner', 'reason', 'penalty', 'loser_score']
+    GHOST_DETAIL_HEADER = ['time', 'ghost_name', 'ghost_pos', 'event_type', 'agent_name', 'agent_energy_after']
 
-    # Initialize master summary CSV
     write_csv_report(MASTER_CSV_FILENAME, ['strategy'] + MASTER_HEADER, [], mode='w')
     
     all_results = defaultdict(list)
@@ -430,7 +505,6 @@ def run_experiment(strategy, num_trials, final_summary_writer):
     print(f"\n--- Running Automated Experiment: {strategy} ({num_trials} Trials) ---")
     
     for i in range(1, num_trials + 1):
-        # Setting a unique seed per trial for deterministic randomness across systems
         random.seed(i)
         
         sim = PacmanSimulation(strategy=strategy, trial_num=i)
@@ -440,19 +514,10 @@ def run_experiment(strategy, num_trials, final_summary_writer):
         summary_row = {k: metrics[k] for k in MASTER_HEADER}
         master_summary_data.append({'strategy': strategy, **summary_row})
 
-        # 2. Conflict Detail Reports (Detail_Trial_X.csv)
-        conflict_log = metrics['conflict_log']
-        negotiation_log = metrics['negotiation_log']
-        
-        # Write Conflict Details
-        if conflict_log:
-            conflict_path = os.path.join(DETAIL_DIR, f"Conflict_Trial_{i}.csv")
-            write_csv_report(conflict_path, CONFLICT_DETAIL_HEADER, conflict_log)
-        
-        # Write Negotiation Details
-        if negotiation_log:
-            negotiation_path = os.path.join(DETAIL_DIR, f"Negotiation_Trial_{i}.csv")
-            write_csv_report(negotiation_path, NEGOTIATION_DETAIL_HEADER, negotiation_log)
+        # 2. Conflict Detail Reports (CSV Output for logs)
+        write_csv_report(os.path.join(DETAIL_DIR, f"Conflict_Trial_{i}.csv"), CONFLICT_DETAIL_HEADER, metrics['conflict_log'])
+        write_csv_report(os.path.join(DETAIL_DIR, f"Negotiation_Trial_{i}.csv"), NEGOTIATION_DETAIL_HEADER, metrics['negotiation_log'])
+        write_csv_report(os.path.join(DETAIL_DIR, f"Ghost_Trial_{i}.csv"), GHOST_DETAIL_HEADER, metrics['ghost_log']) # New Ghost Log Output
         
         # Accumulate metrics for averaging
         for key in MASTER_HEADER[1:]:
@@ -472,7 +537,7 @@ def run_experiment(strategy, num_trials, final_summary_writer):
         'Total Conflicts (Avg)': statistics.mean(all_results['conflicts']),
     }
     
-    # 4. Final Statistical Report (Summary.csv) - Write to the single final summary file
+    # 4. Final Statistical Report (Summary.csv)
     final_summary_writer.writerow(avg_metrics)
 
     # Print Summary Report (Console Output)
@@ -497,7 +562,6 @@ if __name__ == "__main__":
     FINAL_SUMMARY_FILE = "MITELEC101_Final_Statistical_Summary.csv"
     FINAL_SUMMARY_HEADER = ['Strategy', 'Avg Wait Time (Efficiency)', 'Avg Access Fairness (Jain\'s)', 'Total Conflicts (Avg)']
     
-    # Open the final summary file once and pass the writer to the experiment function
     with open(FINAL_SUMMARY_FILE, 'w', newline='') as f_summary:
         writer = csv.DictWriter(f_summary, fieldnames=FINAL_SUMMARY_HEADER)
         writer.writeheader()
