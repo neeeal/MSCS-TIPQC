@@ -4,6 +4,7 @@ MCSCC 163/s2s*
 !datasets/.gitkeep
 *ch.md
 *old_models/
+MITELEC101_*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
