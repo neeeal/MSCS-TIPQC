@@ -58,7 +58,7 @@ class Maze:
             return True
         return False
 
-# ====================== Agent Setup (UNCHANGED) ======================
+# ====================== Agent Setup (ADDED FORMAL GOALS) ======================
 
 class Agent:
     def __init__(self, name, symbol, pos, energy=300): 
@@ -72,6 +72,11 @@ class Agent:
         self.active = True
         self.current_lock = None
         self.sensing_radius = 3
+        # Formal Goal-Based Architecture Components (for thesis documentation)
+        self.Goals = ['Maximize Score', 'Maintain Energy > 0'] 
+        self.Beliefs = {'SharedRouteLocked': False, 'OpponentScore': 0} # Beliefs are derived from perception/sensing
+        self.Intentions = None # Represents the committed course of action (e.g., path plan)
+
 
     def move(self, direction, maze):
         x, y = self.pos
@@ -88,6 +93,7 @@ class Agent:
             self.active = False
             
     def make_alternating_offer(self, opponent, corridor_pos, round_num):
+        # The logic here acts as the Agent's decision module based on perceived state (Beliefs)
         if round_num % 2 == 0:
             compensation = 'immediate_energy_boost' if opponent.energy < 150 else 'future_pellet_share'
             return {
@@ -118,7 +124,6 @@ class Ghost:
         directions = ['U', 'D', 'L', 'R']
         random.shuffle(directions)
         
-        # Simple ghost movement: chase nearest agent or random
         min_dist = float('inf')
         best_pos = None
         
@@ -136,7 +141,6 @@ class Ghost:
         if best_pos:
             return best_pos
         
-        # Fallback to random if no clear path/target
         for dir in directions:
              dx, dy = {'U': (-1, 0), 'D': (1, 0), 'L': (0, -1), 'R': (0, 1)}[dir]
              nx, ny = x + dx, y + dy
@@ -297,6 +301,7 @@ class ConflictManager:
         return self.resolve_conflict(contenders)
 
     def evaluate_offer_utility(self, offer, agent):
+        # This utility function reflects the agent's *Goal* to maintain energy and maximize score
         cost_of_yielding = 0.5
         benefit_of_compensation = 0.0
         
@@ -305,6 +310,7 @@ class ConflictManager:
         elif offer['content'].get('compensation') == 'future_pellet_share':
             benefit_of_compensation = 0.4
         
+        # Agent rationality is influenced by current state (Beliefs)
         utility = (benefit_of_compensation - cost_of_yielding) * (1 - agent.energy/600) + 0.5
         utility += random.uniform(-0.1, 0.1)
         return max(0.0, min(1.0, utility))
@@ -331,15 +337,14 @@ class PacmanSimulation:
             Agent("PacmanB", "B", (self.maze.height - 1, 0)),
             Agent("PacmanC", "C", (0, self.maze.width - 1))
         ]
-        # RE-INTRODUCED GHOSTS
         self.ghosts = [
             Ghost("Ghost1", "G", (self.maze.height // 2 - 1, self.maze.width // 2 - 1)),
             Ghost("Ghost2", "H", (self.maze.height // 2 + 1, self.maze.width // 2 + 1))
         ]
-        self.ghost_log = [] # New log for ghost activity
+        self.ghost_log = [] 
         self.turns = 250
         self.trial_num = trial_num
-        self.energy_loss_ghost = -20 # Ghost attack penalty
+        self.energy_loss_ghost = -20 
 
     def log_ghost_event(self, time, ghost, agent=None, type='Move'):
         event = {
@@ -364,22 +369,20 @@ class PacmanSimulation:
             
             self.manager.set_time(t)
 
-            # --- GHOST MOVEMENT AND ATTACK LOGIC RE-IMPLEMENTED ---
+            # --- GHOST MOVEMENT AND ATTACK LOGIC ---
             for ghost in self.ghosts:
                 if ghost.active:
                     new_pos = ghost.move(self.maze, active_agents)
-                    self.log_ghost_event(t, ghost, type='Move_Start') # Log current position before move
+                    self.log_ghost_event(t, ghost, type='Move_Start') 
                     ghost.pos = new_pos
-                    self.log_ghost_event(t, ghost, type='Move_End')   # Log new position
+                    self.log_ghost_event(t, ghost, type='Move_End') 
                     
-                    # Check for agent capture
                     for agent in active_agents:
                         if agent.pos == ghost.pos and agent.active:
                             agent.update_energy(self.energy_loss_ghost)
                             self.log_ghost_event(t, ghost, agent, type='Capture')
                             
-            # --- END GHOST LOGIC ---
-
+            # --- AGENT MOVEMENT ---
             proposed_positions = {}
             for agent in active_agents:
                 closest_shared_pos = None
@@ -468,7 +471,7 @@ class PacmanSimulation:
         
         metrics['conflict_log'] = self.manager.conflict_log
         metrics['negotiation_log'] = self.manager.negotiation_log
-        metrics['ghost_log'] = self.ghost_log # Include new ghost log
+        metrics['ghost_log'] = self.ghost_log 
         
         return metrics
 
@@ -476,7 +479,7 @@ class PacmanSimulation:
 
 def write_csv_report(filename, header, data, mode='w'):
     """Writes or appends data to a CSV file."""
-    if not data: return # Skip writing empty files
+    if not data: return 
     with open(filename, mode, newline='') as f:
         writer = csv.DictWriter(f, fieldnames=header)
         if mode == 'w':
@@ -517,7 +520,7 @@ def run_experiment(strategy, num_trials, final_summary_writer):
         # 2. Conflict Detail Reports (CSV Output for logs)
         write_csv_report(os.path.join(DETAIL_DIR, f"Conflict_Trial_{i}.csv"), CONFLICT_DETAIL_HEADER, metrics['conflict_log'])
         write_csv_report(os.path.join(DETAIL_DIR, f"Negotiation_Trial_{i}.csv"), NEGOTIATION_DETAIL_HEADER, metrics['negotiation_log'])
-        write_csv_report(os.path.join(DETAIL_DIR, f"Ghost_Trial_{i}.csv"), GHOST_DETAIL_HEADER, metrics['ghost_log']) # New Ghost Log Output
+        write_csv_report(os.path.join(DETAIL_DIR, f"Ghost_Trial_{i}.csv"), GHOST_DETAIL_HEADER, metrics['ghost_log']) 
         
         # Accumulate metrics for averaging
         for key in MASTER_HEADER[1:]:
