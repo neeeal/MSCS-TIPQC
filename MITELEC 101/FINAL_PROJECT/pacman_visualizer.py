@@ -1,445 +1,623 @@
-import pygame
-import sys
-import os
-from pacman_simulation import PacmanSimulation
 import random
+import time
+from collections import defaultdict
 import math
+import csv
+import os
+import pygame
+import statistics
 
-class PacmanVisualizer:
-    def __init__(self, simulation, cell_size=50):
-        self.simulation = simulation
-        self.cell_size = cell_size
-        self.width = simulation.maze.width * cell_size + 300  # Extra space for metrics panel
-        self.height = simulation.maze.height * cell_size
-        
-        # Initialize Pygame
-        pygame.init()
-        self.screen = pygame.display.set_mode((self.width, self.height))
-        pygame.display.set_caption("Enhanced Pac-Man Multi-Agent Simulation")
-        
-        # Enhanced color scheme
-        self.colors = {
-            'background': (0, 0, 0),
-            'wall': (0, 0, 150),
-            'pellet': (255, 255, 255),
-            'shared_corridor_unlocked': (100, 100, 255),    # Blue for unlocked
-            'shared_corridor_locked': (255, 100, 100),      # Red for locked
-            'agent_a': (255, 0, 0),      # Red
-            'agent_b': (0, 255, 0),      # Green
-            'agent_c': (255, 255, 0),    # Yellow
-            'ghost': (255, 0, 255),      # Pink
-            'text': (255, 255, 255),
-            'conflict_alert': (255, 165, 0),  # Orange for conflict
-            'negotiation_active': (255, 215, 0),  # Gold for negotiation
-            'path_anticipation': (0, 255, 255),   # Cyan for path anticipation
-            'metrics_panel': (30, 30, 30),        # Dark gray for metrics panel
-            'success': (0, 255, 0),               # Green for success
-            'warning': (255, 255, 0),             # Yellow for warning
-            'danger': (255, 0, 0)                 # Red for danger
-        }
-        
-        # Fonts for different text sizes
-        self.font = pygame.font.Font(None, 24)
-        self.small_font = pygame.font.Font(None, 18)
-        self.large_font = pygame.font.Font(None, 32)
-        
-        # Visualization state
-        self.current_conflict = None
-        self.negotiation_messages = []
-        self.conflict_history = []
-        self.last_negotiation_outcome = None
-        
-    def draw_maze(self):
-        """Draw the maze grid with walls, pellets, and shared corridors with status"""
-        self.screen.fill(self.colors['background'])
-        
-        for i in range(self.simulation.maze.height):
-            for j in range(self.simulation.maze.width):
-                x = j * self.cell_size
-                y = i * self.cell_size
-                rect = pygame.Rect(x, y, self.cell_size, self.cell_size)
-                
-                # Draw different cell types
-                if (i, j) in self.simulation.maze.walls:
-                    pygame.draw.rect(self.screen, self.colors['wall'], rect)
-                elif (i, j) in self.simulation.maze.shared_corridors:
-                    # Check shared route status (UNLOCKED or LOCKED)
-                    if self.simulation.maze.is_locked((i, j)):
-                        # Draw locked shared corridor in red
-                        pygame.draw.rect(self.screen, self.colors['shared_corridor_locked'], rect)
-                        # Add lock symbol
-                        lock_text = self.small_font.render("🔒", True, (255, 255, 255))
-                        lock_rect = lock_text.get_rect(center=(x + self.cell_size//2, y + self.cell_size//2))
-                        self.screen.blit(lock_text, lock_rect)
-                    else:
-                        # Draw unlocked shared corridor in blue
-                        pygame.draw.rect(self.screen, self.colors['shared_corridor_unlocked'], rect)
-                        # Add unlock symbol
-                        unlock_text = self.small_font.render("🔓", True, (255, 255, 255))
-                        unlock_rect = unlock_text.get_rect(center=(x + self.cell_size//2, y + self.cell_size//2))
-                        self.screen.blit(unlock_text, unlock_rect)
-                elif (i, j) in self.simulation.maze.pellets:
-                    # Draw pellet as small circle
-                    center = (x + self.cell_size // 2, y + self.cell_size // 2)
-                    pygame.draw.circle(self.screen, self.colors['pellet'], center, self.cell_size // 8)
-                
-                # Draw grid lines
-                pygame.draw.rect(self.screen, (50, 50, 50), rect, 1)
-    
-    def draw_agents(self):
-        """Draw all active agents with enhanced features"""
-        for agent in self.simulation.agents:
-            if agent.active:
-                x = agent.pos[1] * self.cell_size + self.cell_size // 2
-                y = agent.pos[0] * self.cell_size + self.cell_size // 2
-                
-                # Different colors for different agents
-                if agent.symbol == 'A':
-                    color = self.colors['agent_a']
-                elif agent.symbol == 'B':
-                    color = self.colors['agent_b']
-                else:
-                    color = self.colors['agent_c']
-                
-                # Draw agent as circle with energy indicator
-                pygame.draw.circle(self.screen, color, (x, y), self.cell_size // 3)
-                
-                # Draw energy bar above agent
-                energy_width = (self.cell_size // 2) * (agent.energy / 100)
-                energy_rect = pygame.Rect(x - self.cell_size//4, y - self.cell_size//2 - 5, energy_width, 3)
-                pygame.draw.rect(self.screen, self.colors['success'], energy_rect)
-                
-                # Draw agent symbol
-                text = self.font.render(agent.symbol, True, (0, 0, 0))
-                text_rect = text.get_rect(center=(x, y))
-                self.screen.blit(text, text_rect)
-                
-                # Draw path anticipation (if applicable)
-                self.draw_path_anticipation(agent)
-    
-    def draw_ghosts(self):
-        """Draw all ghosts"""
-        for ghost in self.simulation.ghosts:
-            if ghost.active:
-                x = ghost.pos[1] * self.cell_size + self.cell_size // 2
-                y = ghost.pos[0] * self.cell_size + self.cell_size // 2
-                
-                # Draw ghost as larger circle
-                pygame.draw.circle(self.screen, self.colors['ghost'], (x, y), self.cell_size // 2.5)
-                
-                # Draw ghost symbol
-                text = self.font.render(ghost.symbol, True, (0, 0, 0))
-                text_rect = text.get_rect(center=(x, y))
-                self.screen.blit(text, text_rect)
-    
-    def draw_path_anticipation(self, agent):
-        """Draw path anticipation and potential conflicts for an agent"""
-        # Get potential conflicts within sensing radius
-        potential_conflicts = agent.detect_potential_conflicts(
-            [a for a in self.simulation.agents if a != agent and a.active],
-            self.simulation.maze
-        )
-        
-        for conflict in potential_conflicts:
-            pos = conflict['position']
-            x = pos[1] * self.cell_size + self.cell_size // 2
-            y = pos[0] * self.cell_size + self.cell_size // 2
-            
-            # Draw conflict anticipation indicator
-            pygame.draw.circle(self.screen, self.colors['path_anticipation'], (x, y), self.cell_size // 6, 2)
-            
-            # Draw line from agent to potential conflict
-            agent_x = agent.pos[1] * self.cell_size + self.cell_size // 2
-            agent_y = agent.pos[0] * self.cell_size + self.cell_size // 2
-            pygame.draw.line(self.screen, self.colors['path_anticipation'],
-                           (agent_x, agent_y), (x, y), 1)
+# --- CONFIGURATION ---
+NUM_TRIALS = 1
+CELL_SIZE = 40
+SIDEBAR_WIDTH = 250
+FPS = 30 
+MAX_TURNS = 2000
 
-    def draw_conflict_detection(self):
-        """Draw active conflicts and negotiation processes"""
-        # Draw conflict alerts for recent conflicts
-        if self.current_conflict:
-            pos = self.current_conflict['position']
-            x = pos[1] * self.cell_size + self.cell_size // 2
-            y = pos[0] * self.cell_size + self.cell_size // 2
-            
-            # Draw pulsating conflict circle
-            pulse = (pygame.time.get_ticks() // 200) % 2
-            radius = self.cell_size // 3 + (pulse * 5)
-            pygame.draw.circle(self.screen, self.colors['conflict_alert'], (x, y), radius, 3)
-            
-            # Draw conflict text
-            conflict_text = self.font.render("CONFLICT!", True, self.colors['conflict_alert'])
-            text_rect = conflict_text.get_rect(center=(x, y - self.cell_size//2))
-            self.screen.blit(conflict_text, text_rect)
+# --- COLORS ---
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+BLUE = (0, 0, 255)     
+GREY = (100, 100, 100) 
+RED = (255, 0, 0)      
+YELLOW = (255, 255, 0) 
+CYAN = (0, 255, 255)   
+MAGENTA = (255, 0, 255)
+GREEN = (0, 255, 0)    
+ORANGE = (255, 165, 0) 
 
-    def draw_negotiation_messages(self):
-        """Draw negotiation messages and outcomes"""
-        if self.negotiation_messages:
-            message_y = self.simulation.maze.height * self.cell_size - 100
-            for i, message in enumerate(self.negotiation_messages[-3:]):  # Show last 3 messages
-                msg_text = self.small_font.render(message, True, self.colors['negotiation_active'])
-                self.screen.blit(msg_text, (10, message_y + i * 20))
+# ====================== Environment Setup ======================
 
-    def draw_enhanced_metrics(self, turn):
-        """Draw comprehensive real-time metrics"""
-        # Draw metrics panel background
-        metrics_x = self.simulation.maze.width * self.cell_size + 10
-        metrics_width = self.width - metrics_x - 10
-        metrics_rect = pygame.Rect(metrics_x, 10, metrics_width, self.height - 20)
-        pygame.draw.rect(self.screen, self.colors['metrics_panel'], metrics_rect)
-        pygame.draw.rect(self.screen, self.colors['text'], metrics_rect, 2)
-        
-        stats_y = 20
-        
-        # Simulation info
-        title = self.large_font.render("Enhanced MAS Metrics", True, self.colors['text'])
-        self.screen.blit(title, (metrics_x + 10, stats_y))
-        stats_y += 40
-        
-        # Turn and active agents
-        turn_text = self.font.render(f"Turn: {turn}/{self.simulation.turns}", True, self.colors['text'])
-        self.screen.blit(turn_text, (metrics_x + 10, stats_y))
-        stats_y += 25
-        
-        active_count = len([a for a in self.simulation.agents if a.active])
-        active_text = self.font.render(f"Active Agents: {active_count}", True, self.colors['success'])
-        self.screen.blit(active_text, (metrics_x + 10, stats_y))
-        stats_y += 25
-        
-        # Conflict metrics
-        conflicts_text = self.font.render(f"Total Conflicts: {self.simulation.manager.conflicts}", True, self.colors['text'])
-        self.screen.blit(conflicts_text, (metrics_x + 10, stats_y))
-        stats_y += 25
-        
-        successful_neg_text = self.font.render(f"Successful Negotiations: {self.simulation.manager.successful_negotiations}", True, self.colors['success'])
-        self.screen.blit(successful_neg_text, (metrics_x + 10, stats_y))
-        stats_y += 25
-        
-        pre_detected_text = self.font.render(f"Pre-detected Conflicts: {self.simulation.manager.pre_detected_conflicts}", True, self.colors['path_anticipation'])
-        self.screen.blit(pre_detected_text, (metrics_x + 10, stats_y))
-        stats_y += 25
-        
-        # Negotiation strategy distribution
-        stats_y += 10
-        strategy_title = self.font.render("Negotiation Strategies:", True, self.colors['text'])
-        self.screen.blit(strategy_title, (metrics_x + 10, stats_y))
-        stats_y += 25
-        
-        priority_text = self.small_font.render(f"Priority-based: {self.simulation.manager.priority_based_resolutions}", True, self.colors['text'])
-        self.screen.blit(priority_text, (metrics_x + 20, stats_y))
-        stats_y += 20
-        
-        alternating_text = self.small_font.render(f"Alternating Offers: {self.simulation.manager.alternating_offer_resolutions}", True, self.colors['text'])
-        self.screen.blit(alternating_text, (metrics_x + 20, stats_y))
-        stats_y += 20
-        
-        multi_issue_text = self.small_font.render(f"Multi-issue: {self.simulation.manager.multi_issue_negotiations}", True, self.colors['text'])
-        self.screen.blit(multi_issue_text, (metrics_x + 20, stats_y))
-        stats_y += 30
-        
-        # Agent detailed stats
-        stats_y += 10
-        agent_title = self.font.render("Agent Details:", True, self.colors['text'])
-        self.screen.blit(agent_title, (metrics_x + 10, stats_y))
-        stats_y += 25
-        
-        for agent in self.simulation.agents:
-            status_color = self.colors['success'] if agent.active else self.colors['danger']
-            status = "ACTIVE" if agent.active else "DROPPED"
-            agent_text = self.small_font.render(
-                f"{agent.name}: Score={agent.score}, Energy={agent.energy:.1f}, Wait={agent.wait_time}",
-                True, status_color
-            )
-            self.screen.blit(agent_text, (metrics_x + 20, stats_y))
-            stats_y += 18
-            
-            # Show negotiation history count
-            history_text = self.small_font.render(
-                f"  Negotiations: {len(agent.negotiation_history)}",
-                True, self.colors['text']
-            )
-            self.screen.blit(history_text, (metrics_x + 30, stats_y))
-            stats_y += 16
-        
-        # Last negotiation outcome
-        if self.last_negotiation_outcome:
-            stats_y += 10
-            outcome_title = self.font.render("Last Negotiation:", True, self.colors['negotiation_active'])
-            self.screen.blit(outcome_title, (metrics_x + 10, stats_y))
-            stats_y += 25
-            
-            outcome_text = self.small_font.render(self.last_negotiation_outcome, True, self.colors['text'])
-            self.screen.blit(outcome_text, (metrics_x + 10, stats_y))
-    
-    def handle_events(self):
-        """Handle Pygame events"""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    return False
-                elif event.key == pygame.K_SPACE:
-                    # Pause/unpause simulation
-                    return "PAUSE"
+class Maze:
+    def __init__(self, width=15, height=15):
+        self.width = width
+        self.height = height
+        self.grid = [['.' for _ in range(width)] for _ in range(height)]
+        self.shared_corridors = set()
+        self.walls = set()
+        self.pellets = set()
+        self.shared_route_status = {}  
+        self._generate_maze()
+
+    def _generate_maze(self):
+        agent_starts = {(0, 0), (self.height - 1, 0), (0, self.width - 1)}
+        for _ in range(int(self.width * self.height * 0.2)):
+            wall = (random.randint(0, self.height - 1), random.randint(0, self.width - 1))
+            if wall not in agent_starts:
+                self.grid[wall[0]][wall[1]] = '#'
+                self.walls.add(wall)
+        mid_row = self.height // 2
+        for j in range(self.width // 2 - 3, self.width // 2 + 4):
+            pos = (mid_row, j)
+            if 0 <= j < self.width:
+                if pos in self.walls: self.walls.remove(pos)
+                self.grid[pos[0]][pos[1]] = '='
+                self.shared_corridors.add(pos)
+        for i in range(self.height):
+            for j in range(self.width):
+                pos = (i, j)
+                if self.grid[i][j] == '.' or self.grid[i][j] == '=':
+                    if pos not in self.walls:
+                        self.pellets.add(pos)
+                if pos in self.shared_corridors:
+                     self.shared_route_status[pos] = None
+
+    def lock(self, position, agent_name):
+        if position in self.shared_corridors:
+            if self.shared_route_status[position] is None:
+                self.shared_route_status[position] = agent_name
+                return True
+            return False 
         return True
 
-    def update_visualization_state(self, active_agents, turn):
-        """Update visualization state based on simulation events"""
-        # Check for new conflicts in the conflict log
-        if self.simulation.manager.conflict_log:
-            latest_conflict = self.simulation.manager.conflict_log[-1]
-            # Only update if it's a new conflict
-            if not self.current_conflict or self.current_conflict != latest_conflict:
-                self.current_conflict = latest_conflict
-                conflict_msg = f"CONFLICT: {', '.join(latest_conflict['agents_involved'])} at {latest_conflict['position']}"
-                self.negotiation_messages.append(conflict_msg)
-        
-        # Check for new negotiation outcomes
-        if self.simulation.manager.negotiation_log:
-            latest_negotiation = self.simulation.manager.negotiation_log[-1]
-            outcome_msg = f"NEGOTIATION: {latest_negotiation['strategy']} - {latest_negotiation['resolution']}"
-            if outcome_msg not in self.negotiation_messages:
-                self.negotiation_messages.append(outcome_msg)
-                self.last_negotiation_outcome = f"{latest_negotiation['strategy']}: {latest_negotiation['winner']} won"
-        
-        # Keep only recent messages (last 10)
-        if len(self.negotiation_messages) > 10:
-            self.negotiation_messages = self.negotiation_messages[-10:]
+    def unlock(self, position):
+        if position in self.shared_corridors:
+            self.shared_route_status[position] = None
+            return True
+        return False
 
-    def draw_stats(self, turn):
-        """Draw basic stats (legacy method for compatibility)"""
-        # This is kept for compatibility, but we use enhanced metrics now
-        pass
-    
-    def run_visualization(self):
-        """Run the simulation with enhanced visualization"""
-        clock = pygame.time.Clock()
-        running = True
-        paused = False
-        
-        token_holder = 0
-        active_agents = self.simulation.agents.copy()
-        turn = 0
-        
-        while running and turn < self.simulation.turns:
-            if not paused:
-                turn += 1
-                
-                # Handle events
-                event_result = self.handle_events()
-                if event_result == False:
-                    break
-                elif event_result == "PAUSE":
-                    paused = not paused
-                    continue
-                
-                # Run one simulation step using the enhanced simulation logic
-                # Check win/loss conditions
-                if len(self.simulation.maze.pellets) == 0:
-                    print("All pellets collected! Game over.")
-                    break
-                    
-                active_agents = [a for a in active_agents if a.energy > 0 and a.active]
-                if len(active_agents) == 0:
-                    print("All agents have dropped out!")
-                    break
-                elif len(active_agents) == 1:
-                    print(f"Only {active_agents[0].name} remains!")
-                    break
+# ====================== Agent Setup ======================
 
-                # Ghosts move
-                for ghost in self.simulation.ghosts:
-                    if ghost.active:
-                        new_pos = ghost.move(self.simulation.maze, active_agents)
-                        ghost.pos = new_pos
-                        # Check if ghost caught any agent
-                        for agent in active_agents:
-                            if agent.pos == ghost.pos and agent.active:
-                                agent.update_energy(-20)
-                                print(f"{agent.name} was caught by {ghost.name}! Energy reduced.")
-                                if agent.energy <= 0:
-                                    agent.active = False
-                                    print(f"{agent.name} has dropped out due to ghost attack!")
+class Agent:
+    def __init__(self, name, symbol, pos, color, energy=400): 
+        self.name = name
+        self.symbol = symbol
+        self.pos = pos
+        self.color = color
+        self.energy = energy
+        self.max_energy = energy 
+        self.score = 0
+        self.active = True
+        self.current_lock = None
+        self.sensing_radius = 4
+        
+        # Metrics
+        self.wait_time = 0 
+        
+        # Q-Learning Brain (Only used if Strategy=RL)
+        self.q_table = defaultdict(float) 
+        self.alpha = 0.1      
+        self.gamma = 0.9      
+        self.epsilon = 0.2    
+        self.last_state = None
+        self.last_action = None
+        self.last_reward_val = 0
+        
+        self.actions = ['U', 'D', 'L', 'R', 'W']
 
-                proposed_positions = {}
-                for idx, agent in enumerate(active_agents):
-                    if not agent.active:
-                        continue
-                        
-                    # Only the token holder can propose a move in a shared corridor this turn
-                    if agent.pos in self.simulation.maze.shared_corridors:
-                        if idx == token_holder:
-                            direction = random.choice(['U', 'D', 'L', 'R'])
-                            proposed_positions[agent] = agent.move(direction, self.simulation.maze)
+    # --- RL METHODS ---
+    def get_state(self, maze, ghosts):
+        x, y = self.pos
+        w_u = 1 if not (0 <= x-1 < maze.height and (x-1, y) not in maze.walls) else 0
+        w_d = 1 if not (0 <= x+1 < maze.height and (x+1, y) not in maze.walls) else 0
+        w_l = 1 if not (0 <= y-1 < maze.width and (x, y-1) not in maze.walls) else 0
+        w_r = 1 if not (0 <= y+1 < maze.width and (x, y+1) not in maze.walls) else 0
+        
+        ghost_dir = 'None'
+        ghost_is_critical = 0 
+        min_g_dist = float('inf')
+        closest_g = None
+        for g in ghosts:
+            if g.active:
+                dist = abs(g.pos[0] - x) + abs(g.pos[1] - y)
+                if dist < self.sensing_radius and dist < min_g_dist:
+                    min_g_dist = dist
+                    closest_g = g.pos
+        if closest_g:
+            gx, gy = closest_g
+            if gx < x: ghost_dir = 'U'
+            elif gx > x: ghost_dir = 'D'
+            elif gy < y: ghost_dir = 'L'
+            elif gy > y: ghost_dir = 'R'
+            if min_g_dist <= 2: ghost_is_critical = 1
+
+        target_dir = 'None'
+        targets = list(maze.pellets)
+        if not targets: targets = list(maze.shared_corridors)
+        closest_t = None
+        min_t_dist = float('inf')
+        for t in targets:
+            dist = abs(t[0] - x) + abs(t[1] - y)
+            if dist < min_t_dist:
+                min_t_dist = dist
+                closest_t = t
+        if closest_t:
+            tx, ty = closest_t
+            if abs(tx - x) > abs(ty - y): target_dir = 'U' if tx < x else 'D'
+            else: target_dir = 'L' if ty < y else 'R'
+
+        return (ghost_dir, ghost_is_critical, target_dir, w_u, w_d, w_l, w_r)
+
+    def choose_action(self, state):
+        if random.uniform(0, 1) < self.epsilon: return random.choice(self.actions)
+        q_values = [self.q_table[(state, a)] for a in self.actions]
+        max_q = max(q_values)
+        best_actions = [self.actions[i] for i, q in enumerate(q_values) if q == max_q]
+        return random.choice(best_actions)
+
+    def learn(self, current_state, action, reward, next_state):
+        old_value = self.q_table[(current_state, action)]
+        next_max = max([self.q_table[(next_state, a)] for a in self.actions])
+        new_value = (1 - self.alpha) * old_value + self.alpha * (reward + self.gamma * next_max)
+        self.q_table[(current_state, action)] = new_value
+
+    # --- HEURISTIC METHODS (For Strategy 1 & 2) ---
+    def make_alternating_offer(self, opponent, corridor_pos, round_num):
+        # Used only in Strategy 2
+        if round_num % 2 == 0:
+            compensation = 'immediate_energy_boost' if opponent.energy < 150 else 'future_pellet_share'
+            return {
+                'from': self.name, 'to': opponent.name, 'performative': 'PROPOSE',
+                'content': {'action': 'I_GO_FIRST', 'compensation': compensation, 'waits': 1}
+            }
+        else:
+            return {
+                'from': self.name, 'to': opponent.name, 'performative': 'PROPOSE',
+                'content': {'action': 'YOU_GO_FIRST', 'compensation': 'immediate_energy_boost', 'waits': 0}
+            }
+
+    def move_heuristic(self, maze, ghosts):
+        # Simple movement logic for Non-RL agents
+        moves = [('U', (-1, 0)), ('D', (1, 0)), ('L', (0, -1)), ('R', (0, 1))]
+        valid_moves = []
+        
+        # Detect Ghosts (Fear)
+        closest_ghost = None
+        min_g_dist = float('inf')
+        for g in ghosts:
+            d = abs(g.pos[0] - self.pos[0]) + abs(g.pos[1] - self.pos[1])
+            if d < min_g_dist:
+                min_g_dist = d
+                closest_ghost = g.pos
+
+        for direction, (dx, dy) in moves:
+            nx, ny = self.pos[0] + dx, self.pos[1] + dy
+            if 0 <= nx < maze.height and 0 <= ny < maze.width and (nx, ny) not in maze.walls:
+                valid_moves.append((nx, ny))
+        
+        if not valid_moves: return self.pos
+
+        # Flee
+        if min_g_dist <= 3:
+            valid_moves.sort(key=lambda p: abs(p[0] - closest_ghost[0]) + abs(p[1] - closest_ghost[1]), reverse=True)
+            return valid_moves[0]
+        
+        # Hunt
+        closest_p = None
+        min_p_dist = float('inf')
+        targets = list(maze.pellets) if maze.pellets else list(maze.shared_corridors)
+        for p in targets:
+            d = abs(p[0] - self.pos[0]) + abs(p[1] - self.pos[1])
+            if d < min_p_dist:
+                min_p_dist = d
+                closest_p = p
+        
+        if closest_p:
+            valid_moves.sort(key=lambda p: abs(p[0] - closest_p[0]) + abs(p[1] - closest_p[1]))
+            return valid_moves[0]
+        
+        return random.choice(valid_moves)
+
+    def update_energy(self, delta):
+        self.energy += delta
+        if self.energy > self.max_energy: self.energy = self.max_energy
+        if self.energy <= 0:
+            self.energy = 0
+            self.active = False
+
+# ====================== Conflict Manager ======================
+
+class ConflictManager:
+    def __init__(self, experiment_strategy, trial_num):
+        self.conflicts = 0
+        self.experiment_strategy = experiment_strategy 
+        self.conflict_log = []
+        self.current_time = 0 
+        self.PRIORITY_PENALTY = -2
+        self.FALLBACK_PENALTY = -8
+
+    def set_time(self, t):
+        self.current_time = t
+
+    def log_conflict(self, agents, position, type):
+        if not isinstance(agents, list): agents = [agents]
+        self.conflict_log.append({
+            'time': self.current_time, 'position': position, 'type': type,
+            'agents': [a.name for a in agents]
+        })
+
+    def evaluate_offer_utility(self, offer, agent):
+        # Decision logic for Strategy 2
+        cost_of_yielding = 0.5
+        benefit = 0.8 if offer['content'].get('compensation') == 'immediate_energy_boost' else 0.4
+        utility = (benefit - cost_of_yielding) * (1 - agent.energy/600) + 0.5
+        utility += random.uniform(-0.1, 0.1)
+        return max(0.0, min(1.0, utility))
+
+    def resolve_conflict_heuristic(self, contenders):
+        # Strategy 1 Logic: Score > Energy
+        contenders.sort(key=lambda a: (a.score, a.energy), reverse=True)
+        return contenders[0] # Winner
+
+    def alternating_offer_negotiate(self, contenders, pos):
+        # Strategy 2 Logic
+        if len(contenders) != 2: return self.resolve_conflict_heuristic(contenders)
+        
+        agent1, agent2 = contenders[0], contenders[1]
+        # Proposer is usually the one with lower score (needs it more)
+        if agent1.score < agent2.score: proposer, respondent = agent1, agent2
+        else: proposer, respondent = agent2, agent1
+        
+        for round in range(3): # 3 Round Timeout
+            offer = proposer.make_alternating_offer(respondent, pos, round)
+            utility = self.evaluate_offer_utility(offer, respondent)
+            if utility > 0.5:
+                return (proposer if offer['content']['action'] == 'I_GO_FIRST' else respondent)
+            proposer, respondent = respondent, proposer # Swap roles
+            
+        return None # Negotiation Failed
+
+    def negotiate(self, agents, proposed_positions, maze):
+        reverse_map = defaultdict(list)
+        resolved_positions = {}
+        
+        for agent, pos in proposed_positions.items():
+            reverse_map[pos].append(agent)
+
+        for pos, contenders in reverse_map.items():
+            # CASE A: Single Agent wants tile
+            if len(contenders) == 1:
+                agent = contenders[0]
+                if pos in maze.shared_corridors:
+                    if not maze.lock(pos, agent.name):
+                        locker = maze.shared_route_status.get(pos)
+                        if locker != agent.name:
+                            # Locked by someone else
+                            # For RL, we bounce. For Heuristic, we might negotiate.
+                            if self.experiment_strategy == 'Q_LEARNING':
+                                resolved_positions[agent] = agent.pos 
+                                self.conflicts += 1
+                                self.log_conflict(agent, pos, "Lock_Collision")
+                            else:
+                                # Heuristic Negotiation on Lock
+                                locking_agent = next((a for a in agents if a.name == locker), None)
+                                if locking_agent:
+                                    self.conflicts += 1
+                                    winner = self.handle_strategy([agent, locking_agent], pos)
+                                    if winner == agent:
+                                        maze.unlock(pos)
+                                        resolved_positions[locking_agent] = locking_agent.pos # Force unlocker back? 
+                                        # Simplified: Winner takes lock
+                                        maze.lock(pos, agent.name)
+                                        resolved_positions[agent] = pos
+                                    else:
+                                        resolved_positions[agent] = agent.pos
+                                else:
+                                    resolved_positions[agent] = agent.pos
                         else:
-                            # Must wait for token
-                            proposed_positions[agent] = agent.pos
-                            agent.wait_time += 1
+                            resolved_positions[agent] = pos
                     else:
-                        direction = random.choice(['U', 'D', 'L', 'R'])
-                        proposed_positions[agent] = agent.move(direction, self.simulation.maze)
-
-                # Use enhanced negotiation with maze parameter
-                resolved = self.simulation.manager.negotiate(active_agents, proposed_positions, self.simulation.maze)
-                for agent, pos in resolved.items():
-                    agent.pos = pos
-                    if pos in self.simulation.maze.pellets:
-                        agent.score += 10
-                        self.simulation.maze.pellets.remove(pos)
-                        self.simulation.maze.grid[pos[0]][pos[1]] = ' '
-                    if pos in self.simulation.maze.shared_corridors:
-                        agent.update_energy(-1)
-                    else:
-                        agent.update_energy(-0.5)
-                        
-                    # Check if agent should drop out
-                    if agent.energy <= 0:
-                        agent.active = False
-                        print(f"{agent.name} has dropped out due to low energy!")
-
-                # Update visualization state with new conflicts and negotiations
-                self.update_visualization_state(active_agents, turn)
+                        agent.current_lock = pos
+                        resolved_positions[agent] = pos
+                else:
+                    resolved_positions[agent] = pos
+            
+            # CASE B: Multiple Agents want tile
+            else:
+                self.conflicts += 1
+                self.log_conflict(contenders, pos, "Position_Collision")
                 
-                # Token passing: next agent gets the token for shared corridor
-                token_holder = (token_holder + 1) % len(active_agents)
+                winner = self.handle_strategy(contenders, pos)
+                
+                for agent in contenders:
+                    if agent == winner:
+                        resolved_positions[agent] = pos
+                        if pos in maze.shared_corridors:
+                            maze.lock(pos, agent.name)
+                            agent.current_lock = pos
+                    else:
+                        resolved_positions[agent] = agent.pos 
+                        # Apply Heuristic Penalties immediately
+                        if self.experiment_strategy != 'Q_LEARNING':
+                            penalty = self.PRIORITY_PENALTY if self.experiment_strategy == 'PRIORITY_BASED' else -8
+                            agent.update_energy(penalty)
 
-            # Update visualization (always draw, even when paused)
-            self.draw_maze()
-            self.draw_agents()
-            self.draw_ghosts()
-            self.draw_conflict_detection()
-            self.draw_negotiation_messages()
-            self.draw_enhanced_metrics(turn)
+        return resolved_positions
+
+    def handle_strategy(self, contenders, pos):
+        if self.experiment_strategy == 'Q_LEARNING':
+            return random.choice(contenders)
+        elif self.experiment_strategy == 'PRIORITY_BASED':
+            return self.resolve_conflict_heuristic(contenders)
+        elif self.experiment_strategy == 'ALTERNATING_OFFER':
+            winner = self.alternating_offer_negotiate(contenders, pos)
+            if winner: return winner
+            else: return self.resolve_conflict_heuristic(contenders) # Fallback
+        return contenders[0]
+
+# ====================== GUI Wrapper ======================
+
+class Ghost:
+    def __init__(self, name, symbol, pos):
+        self.name = name
+        self.symbol = symbol
+        self.pos = pos
+        self.active = True
+    def move(self, maze, agents):
+        x, y = self.pos
+        directions = ['U', 'D', 'L', 'R']
+        if random.random() < 0.3:
+            min_dist = float('inf'); best_pos = None
+            for dir in directions:
+                dx, dy = {'U':(-1,0),'D':(1,0),'L':(0,-1),'R':(0,1)}[dir]
+                nx, ny = x+dx, y+dy
+                if 0<=nx<maze.height and 0<=ny<maze.width and (nx,ny) not in maze.walls:
+                    for agent in agents:
+                        if agent.active:
+                            d = abs(nx-agent.pos[0])+abs(ny-agent.pos[1])
+                            if d<min_dist: min_dist=d; best_pos=(nx,ny)
+            if best_pos: return best_pos
+        random.shuffle(directions)
+        for dir in directions:
+             dx, dy = {'U':(-1,0),'D':(1,0),'L':(0,-1),'R':(0,1)}[dir]
+             nx, ny = x+dx, y+dy
+             if 0<=nx<maze.height and 0<=ny<maze.width and (nx,ny) not in maze.walls: return (nx,ny)
+        return self.pos
+
+class PacmanSimulation:
+    def __init__(self, strategy='Q_LEARNING', trial_num=1):
+        pygame.init()
+        self.maze = Maze()
+        self.width_px = self.maze.width * CELL_SIZE + SIDEBAR_WIDTH
+        self.height_px = self.maze.height * CELL_SIZE
+        self.screen = pygame.display.set_mode((self.width_px, self.height_px))
+        pygame.display.set_caption(f"MAS Pac-Man: {strategy}")
+        self.clock = pygame.time.Clock()
+        self.font = pygame.font.SysFont("Arial", 16)
+
+        self.manager = ConflictManager(strategy, trial_num)
+        self.strategy = strategy
+        self.agents = [
+            Agent("PacmanA", "A", (0, 0), YELLOW),
+            Agent("PacmanB", "B", (self.maze.height - 1, 0), CYAN),
+            Agent("PacmanC", "C", (0, self.maze.width - 1), MAGENTA)
+        ]
+        self.ghosts = [
+            Ghost("Ghost1", "G", (self.maze.height // 2 - 1, self.maze.width // 2 - 1)),
+            Ghost("Ghost2", "H", (self.maze.height // 2 + 1, self.maze.width // 2 + 1))
+        ]
+        self.time_step = 0
+        self.max_turns = MAX_TURNS
+        self.running = True
+        self.energy_loss_ghost = -50 
+
+    def draw(self):
+        self.screen.fill(BLACK)
+        for r in range(self.maze.height):
+            for c in range(self.maze.width):
+                rect = pygame.Rect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+                char = self.maze.grid[r][c]
+                if char == '#': pygame.draw.rect(self.screen, BLUE, rect)
+                elif char == '=': pygame.draw.rect(self.screen, GREY, rect)
+                if (r, c) in self.maze.pellets:
+                    center = (c * CELL_SIZE + CELL_SIZE // 2, r * CELL_SIZE + CELL_SIZE // 2)
+                    pygame.draw.circle(self.screen, WHITE, center, 4)
+
+        for agent in self.agents:
+            if agent.active:
+                center = (agent.pos[1] * CELL_SIZE + CELL_SIZE // 2, agent.pos[0] * CELL_SIZE + CELL_SIZE // 2)
+                pygame.draw.circle(self.screen, agent.color, center, CELL_SIZE // 2 - 2)
+        for ghost in self.ghosts:
+            center = (ghost.pos[1] * CELL_SIZE + CELL_SIZE // 2, ghost.pos[0] * CELL_SIZE + CELL_SIZE // 2)
+            pygame.draw.circle(self.screen, RED, center, CELL_SIZE // 2 - 2)
+
+        ui_x = self.maze.width * CELL_SIZE + 10
+        y_offset = 10
+        self.screen.blit(self.font.render(f"Time: {self.time_step}", True, GREEN), (ui_x, y_offset))
+        y_offset += 20
+        self.screen.blit(self.font.render(f"Mode: {self.strategy}", True, GREEN), (ui_x, y_offset))
+        y_offset += 30
+        
+        all_waits = [a.wait_time for a in self.agents]
+        avg_wait = statistics.mean(all_waits) if all_waits else 0
+        fairness_index = 1.0
+        if sum(all_waits) > 0:
+            num = sum(all_waits) ** 2
+            den = len(all_waits) * sum(w ** 2 for w in all_waits)
+            fairness_index = num / den if den != 0 else 0
             
-            # Show pause indicator if paused
-            if paused:
-                pause_text = self.large_font.render("PAUSED - Press SPACE to continue", True, self.colors['warning'])
-                text_rect = pause_text.get_rect(center=(self.width//2, self.height//2))
-                self.screen.blit(pause_text, text_rect)
+        self.screen.blit(self.font.render(f"Conflicts: {self.manager.conflicts}", True, WHITE), (ui_x, y_offset))
+        y_offset += 20
+        self.screen.blit(self.font.render(f"Avg Wait: {avg_wait:.1f}", True, WHITE), (ui_x, y_offset))
+        y_offset += 20
+        self.screen.blit(self.font.render(f"Jain's Idx: {fairness_index:.2f}", True, WHITE), (ui_x, y_offset))
+        y_offset += 30
+        
+        for agent in self.agents:
+            color = agent.color if agent.active else GREY
+            stats = f"{agent.symbol}: Sc:{agent.score} Wait:{agent.wait_time} Rwd:{agent.last_reward_val}"
+            self.screen.blit(self.font.render(stats, True, color), (ui_x, y_offset))
+            y_offset += 20
+            if agent.active:
+                pct = max(0, agent.energy / agent.max_energy)
+                pygame.draw.rect(self.screen, (50, 50, 50), (ui_x, y_offset, 200, 8))
+                pygame.draw.rect(self.screen, GREEN if pct > 0.5 else RED, (ui_x, y_offset, int(200 * pct), 8))
+            y_offset += 25
+        pygame.display.flip()
+
+    def update(self):
+        if not any(a.active for a in self.agents) or not self.maze.pellets or self.time_step >= self.max_turns:
+            self.running = False
+            return
+
+        self.manager.set_time(self.time_step)
+
+        for ghost in self.ghosts:
+            if ghost.active: ghost.pos = ghost.move(self.maze, self.agents)
+
+        proposed_positions = {}
+        agent_intents = {} 
+
+        for agent in self.agents:
+            if not agent.active: continue
             
-            pygame.display.flip()
-            clock.tick(2)  # 2 FPS for better visibility
+            if self.strategy == 'Q_LEARNING':
+                state = agent.get_state(self.maze, self.ghosts)
+                action = agent.choose_action(state)
+                intended_pos = agent.pos
+                if action == 'U': target = (agent.pos[0]-1, agent.pos[1])
+                elif action == 'D': target = (agent.pos[0]+1, agent.pos[1])
+                elif action == 'L': target = (agent.pos[0], agent.pos[1]-1)
+                elif action == 'R': target = (agent.pos[0], agent.pos[1]+1)
+                elif action == 'W': target = agent.pos
+                
+                hit_wall = False
+                if not (0 <= target[0] < self.maze.height and 0 <= target[1] < self.maze.width and target not in self.maze.walls):
+                    intended_pos = agent.pos; hit_wall = True
+                else: intended_pos = target
+                agent_intents[agent] = {'state': state, 'action': action, 'hit_wall': hit_wall}
+                proposed_positions[agent] = intended_pos
+            
+            else:
+                # Heuristic Movement (Strategy 1 & 2)
+                target = agent.move_heuristic(self.maze, self.ghosts)
+                proposed_positions[agent] = target
+                agent_intents[agent] = {'state': None, 'action': None, 'hit_wall': False} # Dummy for compatibility
+
+        resolved = self.manager.negotiate(self.agents, proposed_positions, self.maze)
         
-        # Final metrics report
-        self.simulation.report_metrics()
-        
-        # Keep window open until user closes it
-        print("Simulation finished. Close the window to exit.")
-        while running:
-            if not self.handle_events():
-                break
-            pygame.time.wait(100)
-        
-        pygame.quit()
+        for agent, actual_pos in resolved.items():
+            if not agent.active: continue
+            
+            if actual_pos == agent.pos: agent.wait_time += 1
+            if agent.current_lock and actual_pos != agent.current_lock:
+                self.maze.unlock(agent.current_lock)
+                agent.current_lock = None
+            
+            agent.pos = actual_pos
+            
+            # --- REWARD / SCORE LOGIC ---
+            reward = -1 
+            hit_ghost = False
+            for g in self.ghosts:
+                if g.active and g.pos == agent.pos: hit_ghost = True; break
+            
+            if hit_ghost:
+                reward = -100
+                agent.update_energy(self.energy_loss_ghost)
+            else:
+                if agent_intents[agent]['hit_wall']: reward -= 5 
+                
+                if actual_pos in self.maze.pellets:
+                    reward += 20
+                    agent.score += 10
+                    agent.update_energy(15) 
+                    self.maze.pellets.remove(actual_pos)
+                elif actual_pos != agent.pos: reward -= 2 
+                
+                if proposed_positions[agent] != actual_pos and not agent_intents[agent]['hit_wall']: reward -= 2 
+
+                min_g_dist = float('inf')
+                for g in self.ghosts:
+                    d = abs(g.pos[0]-agent.pos[0]) + abs(g.pos[1]-agent.pos[1])
+                    if d < min_g_dist: min_g_dist = d
+                if min_g_dist <= 2: reward -= 5 
+
+            # LEARN (Only if Q-Learning)
+            if self.strategy == 'Q_LEARNING':
+                new_state = agent.get_state(self.maze, self.ghosts)
+                agent.learn(agent_intents[agent]['state'], agent_intents[agent]['action'], reward, new_state)
+                if agent.epsilon > 0.01: agent.epsilon *= 0.999
+            
+            agent.last_reward_val = reward 
+            agent.update_energy(-0.5) 
+
+        self.time_step += 1
+
+    def save_logs(self):
+        filename = f"MITELEC101_{self.strategy}_Metrics.csv"
+        with open(filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Metric', 'Value'])
+            writer.writerow(['Total Turns', self.time_step])
+            writer.writerow(['Total Conflicts', self.manager.conflicts])
+            for a in self.agents: writer.writerow([f'{a.name} Wait', a.wait_time])
+        print(f"Metrics saved to {filename}")
 
 if __name__ == "__main__":
-    # Check if Pygame is available
-    try:
-        sim = PacmanSimulation()
-        visualizer = PacmanVisualizer(sim)
-        visualizer.run_visualization()
-    except ImportError:
-        print("Pygame not available. Running in text mode...")
-        sim = PacmanSimulation()
-        sim.run()
+    random.seed(time.time())
+    pygame.init()
+    screen = pygame.display.set_mode((600, 400))
+    font = pygame.font.SysFont("Arial", 24)
+    
+    selected_strategy = None
+    
+    # --- MENU LOOP ---
+    while not selected_strategy:
+        screen.fill(BLACK)
+        screen.blit(font.render("Select Strategy:", True, WHITE), (50, 50))
+        screen.blit(font.render("1. Priority-Based", True, YELLOW), (50, 100))
+        screen.blit(font.render("2. Alternating Offers", True, CYAN), (50, 150))
+        screen.blit(font.render("3. Q-Learning (RL)", True, MAGENTA), (50, 200))
+        pygame.display.flip()
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: pygame.quit(); exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_1: selected_strategy = 'PRIORITY_BASED'
+                elif event.key == pygame.K_2: selected_strategy = 'ALTERNATING_OFFER'
+                elif event.key == pygame.K_3: selected_strategy = 'Q_LEARNING'
+
+    pygame.quit() # Reset for sim
+    
+    # --- SIMULATION START ---
+    sim = PacmanSimulation(selected_strategy)
+    print(f"Starting {selected_strategy}. Press SPACE to Pause.")
+    
+    window_open = True; paused = False
+    overlay_font = pygame.font.SysFont("Arial", 40, bold=True)
+    
+    while window_open:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: window_open = False  
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE: paused = not paused
+
+        if not paused and sim.running:
+            sim.update()
+            if not sim.running: print("Simulation Finished.")
+
+        sim.draw()
+        
+        if not sim.running:
+            text = overlay_font.render("FINISHED", True,RED)
+            sim.screen.blit(text, (sim.width_px//2-50, sim.height_px//2))
+        elif paused:
+            text = overlay_font.render("PAUSED", True, YELLOW)
+            sim.screen.blit(text, (sim.width_px//2-50, sim.height_px//2))
+
+        pygame.display.flip() 
+        sim.clock.tick(FPS)
+
+    sim.save_logs()
+    pygame.quit()
