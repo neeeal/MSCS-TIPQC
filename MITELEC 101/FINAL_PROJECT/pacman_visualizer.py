@@ -1,6 +1,6 @@
 import random
 import time
-from collections import defaultdict
+from collections import defaultdict, deque # Added deque for memory
 import math
 import csv
 import os
@@ -11,8 +11,8 @@ import statistics
 NUM_TRIALS = 1
 CELL_SIZE = 40
 SIDEBAR_WIDTH = 250
-FPS = 30 
-MAX_TURNS = 2000
+FPS = 60  # CRANKED UP SPEED SO THEY LEARN FASTER
+MAX_TURNS = 3000 # Give them more time to finish
 
 # --- COLORS ---
 BLACK = (0, 0, 0)
@@ -76,7 +76,7 @@ class Maze:
             return True
         return False
 
-# ====================== Agent Setup ======================
+# ====================== Agent Setup (IMPROVED) ======================
 
 class Agent:
     def __init__(self, name, symbol, pos, color, energy=400): 
@@ -91,21 +91,24 @@ class Agent:
         self.current_lock = None
         self.sensing_radius = 4
         
-        # Metrics
         self.wait_time = 0 
         
-        # Q-Learning Brain (Only used if Strategy=RL)
+        # Q-Learning
         self.q_table = defaultdict(float) 
-        self.alpha = 0.1      
+        self.alpha = 0.2      # INCREASED Learning Rate (Learn faster)
         self.gamma = 0.9      
-        self.epsilon = 0.2    
+        self.epsilon = 0.4    # HIGHER exploration start
         self.last_state = None
         self.last_action = None
         self.last_reward_val = 0
         
+        # --- IMPROVEMENT 1: SHORT TERM MEMORY ---
+        # Stores last 4 positions to punish looping
+        self.recent_history = deque(maxlen=4) 
+        self.prev_dist_to_target = float('inf') # For Hot/Cold game
+        
         self.actions = ['U', 'D', 'L', 'R', 'W']
 
-    # --- RL METHODS ---
     def get_state(self, maze, ghosts):
         x, y = self.pos
         w_u = 1 if not (0 <= x-1 < maze.height and (x-1, y) not in maze.walls) else 0
@@ -141,6 +144,10 @@ class Agent:
             if dist < min_t_dist:
                 min_t_dist = dist
                 closest_t = t
+        
+        # Store this for reward calculation later
+        self.current_closest_target_dist = min_t_dist 
+
         if closest_t:
             tx, ty = closest_t
             if abs(tx - x) > abs(ty - y): target_dir = 'U' if tx < x else 'D'
@@ -152,6 +159,7 @@ class Agent:
         if random.uniform(0, 1) < self.epsilon: return random.choice(self.actions)
         q_values = [self.q_table[(state, a)] for a in self.actions]
         max_q = max(q_values)
+        # Random tie-breaking to prevent getting stuck in logic loops
         best_actions = [self.actions[i] for i, q in enumerate(q_values) if q == max_q]
         return random.choice(best_actions)
 
@@ -161,34 +169,21 @@ class Agent:
         new_value = (1 - self.alpha) * old_value + self.alpha * (reward + self.gamma * next_max)
         self.q_table[(current_state, action)] = new_value
 
-    # --- HEURISTIC METHODS (For Strategy 1 & 2) ---
     def make_alternating_offer(self, opponent, corridor_pos, round_num):
-        # Used only in Strategy 2
         if round_num % 2 == 0:
             compensation = 'immediate_energy_boost' if opponent.energy < 150 else 'future_pellet_share'
-            return {
-                'from': self.name, 'to': opponent.name, 'performative': 'PROPOSE',
-                'content': {'action': 'I_GO_FIRST', 'compensation': compensation, 'waits': 1}
-            }
+            return {'from': self.name, 'to': opponent.name, 'performative': 'PROPOSE', 'content': {'action': 'I_GO_FIRST', 'compensation': compensation, 'waits': 1}}
         else:
-            return {
-                'from': self.name, 'to': opponent.name, 'performative': 'PROPOSE',
-                'content': {'action': 'YOU_GO_FIRST', 'compensation': 'immediate_energy_boost', 'waits': 0}
-            }
+            return {'from': self.name, 'to': opponent.name, 'performative': 'PROPOSE', 'content': {'action': 'YOU_GO_FIRST', 'compensation': 'immediate_energy_boost', 'waits': 0}}
 
     def move_heuristic(self, maze, ghosts):
-        # Simple movement logic for Non-RL agents
         moves = [('U', (-1, 0)), ('D', (1, 0)), ('L', (0, -1)), ('R', (0, 1))]
         valid_moves = []
-        
-        # Detect Ghosts (Fear)
         closest_ghost = None
         min_g_dist = float('inf')
         for g in ghosts:
             d = abs(g.pos[0] - self.pos[0]) + abs(g.pos[1] - self.pos[1])
-            if d < min_g_dist:
-                min_g_dist = d
-                closest_ghost = g.pos
+            if d < min_g_dist: min_g_dist = d; closest_ghost = g.pos
 
         for direction, (dx, dy) in moves:
             nx, ny = self.pos[0] + dx, self.pos[1] + dy
@@ -196,34 +191,25 @@ class Agent:
                 valid_moves.append((nx, ny))
         
         if not valid_moves: return self.pos
-
-        # Flee
         if min_g_dist <= 3:
             valid_moves.sort(key=lambda p: abs(p[0] - closest_ghost[0]) + abs(p[1] - closest_ghost[1]), reverse=True)
             return valid_moves[0]
         
-        # Hunt
         closest_p = None
         min_p_dist = float('inf')
         targets = list(maze.pellets) if maze.pellets else list(maze.shared_corridors)
         for p in targets:
             d = abs(p[0] - self.pos[0]) + abs(p[1] - self.pos[1])
-            if d < min_p_dist:
-                min_p_dist = d
-                closest_p = p
-        
+            if d < min_p_dist: min_p_dist = d; closest_p = p
         if closest_p:
             valid_moves.sort(key=lambda p: abs(p[0] - closest_p[0]) + abs(p[1] - closest_p[1]))
             return valid_moves[0]
-        
         return random.choice(valid_moves)
 
     def update_energy(self, delta):
         self.energy += delta
         if self.energy > self.max_energy: self.energy = self.max_energy
-        if self.energy <= 0:
-            self.energy = 0
-            self.active = False
+        if self.energy <= 0: self.energy = 0; self.active = False
 
 # ====================== Conflict Manager ======================
 
@@ -236,18 +222,13 @@ class ConflictManager:
         self.PRIORITY_PENALTY = -2
         self.FALLBACK_PENALTY = -8
 
-    def set_time(self, t):
-        self.current_time = t
+    def set_time(self, t): self.current_time = t
 
     def log_conflict(self, agents, position, type):
         if not isinstance(agents, list): agents = [agents]
-        self.conflict_log.append({
-            'time': self.current_time, 'position': position, 'type': type,
-            'agents': [a.name for a in agents]
-        })
+        self.conflict_log.append({'time': self.current_time, 'position': position, 'type': type, 'agents': [a.name for a in agents]})
 
     def evaluate_offer_utility(self, offer, agent):
-        # Decision logic for Strategy 2
         cost_of_yielding = 0.5
         benefit = 0.8 if offer['content'].get('compensation') == 'immediate_energy_boost' else 0.4
         utility = (benefit - cost_of_yielding) * (1 - agent.energy/600) + 0.5
@@ -255,104 +236,73 @@ class ConflictManager:
         return max(0.0, min(1.0, utility))
 
     def resolve_conflict_heuristic(self, contenders):
-        # Strategy 1 Logic: Score > Energy
         contenders.sort(key=lambda a: (a.score, a.energy), reverse=True)
-        return contenders[0] # Winner
+        return contenders[0] 
 
     def alternating_offer_negotiate(self, contenders, pos):
-        # Strategy 2 Logic
         if len(contenders) != 2: return self.resolve_conflict_heuristic(contenders)
-        
         agent1, agent2 = contenders[0], contenders[1]
-        # Proposer is usually the one with lower score (needs it more)
         if agent1.score < agent2.score: proposer, respondent = agent1, agent2
         else: proposer, respondent = agent2, agent1
-        
-        for round in range(3): # 3 Round Timeout
+        for round in range(3): 
             offer = proposer.make_alternating_offer(respondent, pos, round)
             utility = self.evaluate_offer_utility(offer, respondent)
             if utility > 0.5:
                 return (proposer if offer['content']['action'] == 'I_GO_FIRST' else respondent)
-            proposer, respondent = respondent, proposer # Swap roles
-            
-        return None # Negotiation Failed
+            proposer, respondent = respondent, proposer 
+        return None 
 
     def negotiate(self, agents, proposed_positions, maze):
         reverse_map = defaultdict(list)
         resolved_positions = {}
-        
-        for agent, pos in proposed_positions.items():
-            reverse_map[pos].append(agent)
+        for agent, pos in proposed_positions.items(): reverse_map[pos].append(agent)
 
         for pos, contenders in reverse_map.items():
-            # CASE A: Single Agent wants tile
             if len(contenders) == 1:
                 agent = contenders[0]
                 if pos in maze.shared_corridors:
                     if not maze.lock(pos, agent.name):
                         locker = maze.shared_route_status.get(pos)
                         if locker != agent.name:
-                            # Locked by someone else
-                            # For RL, we bounce. For Heuristic, we might negotiate.
                             if self.experiment_strategy == 'Q_LEARNING':
                                 resolved_positions[agent] = agent.pos 
                                 self.conflicts += 1
                                 self.log_conflict(agent, pos, "Lock_Collision")
                             else:
-                                # Heuristic Negotiation on Lock
                                 locking_agent = next((a for a in agents if a.name == locker), None)
                                 if locking_agent:
                                     self.conflicts += 1
                                     winner = self.handle_strategy([agent, locking_agent], pos)
                                     if winner == agent:
-                                        maze.unlock(pos)
-                                        resolved_positions[locking_agent] = locking_agent.pos # Force unlocker back? 
-                                        # Simplified: Winner takes lock
-                                        maze.lock(pos, agent.name)
-                                        resolved_positions[agent] = pos
-                                    else:
-                                        resolved_positions[agent] = agent.pos
-                                else:
-                                    resolved_positions[agent] = agent.pos
-                        else:
-                            resolved_positions[agent] = pos
-                    else:
-                        agent.current_lock = pos
-                        resolved_positions[agent] = pos
-                else:
-                    resolved_positions[agent] = pos
-            
-            # CASE B: Multiple Agents want tile
+                                        maze.unlock(pos); resolved_positions[locking_agent] = locking_agent.pos 
+                                        maze.lock(pos, agent.name); resolved_positions[agent] = pos
+                                    else: resolved_positions[agent] = agent.pos
+                                else: resolved_positions[agent] = agent.pos
+                        else: resolved_positions[agent] = pos
+                    else: agent.current_lock = pos; resolved_positions[agent] = pos
+                else: resolved_positions[agent] = pos
             else:
                 self.conflicts += 1
                 self.log_conflict(contenders, pos, "Position_Collision")
-                
                 winner = self.handle_strategy(contenders, pos)
-                
                 for agent in contenders:
                     if agent == winner:
                         resolved_positions[agent] = pos
-                        if pos in maze.shared_corridors:
-                            maze.lock(pos, agent.name)
-                            agent.current_lock = pos
+                        if pos in maze.shared_corridors: maze.lock(pos, agent.name); agent.current_lock = pos
                     else:
                         resolved_positions[agent] = agent.pos 
-                        # Apply Heuristic Penalties immediately
                         if self.experiment_strategy != 'Q_LEARNING':
                             penalty = self.PRIORITY_PENALTY if self.experiment_strategy == 'PRIORITY_BASED' else -8
                             agent.update_energy(penalty)
-
         return resolved_positions
 
     def handle_strategy(self, contenders, pos):
-        if self.experiment_strategy == 'Q_LEARNING':
-            return random.choice(contenders)
-        elif self.experiment_strategy == 'PRIORITY_BASED':
-            return self.resolve_conflict_heuristic(contenders)
+        if self.experiment_strategy == 'Q_LEARNING': return random.choice(contenders)
+        elif self.experiment_strategy == 'PRIORITY_BASED': return self.resolve_conflict_heuristic(contenders)
         elif self.experiment_strategy == 'ALTERNATING_OFFER':
             winner = self.alternating_offer_negotiate(contenders, pos)
             if winner: return winner
-            else: return self.resolve_conflict_heuristic(contenders) # Fallback
+            else: return self.resolve_conflict_heuristic(contenders) 
         return contenders[0]
 
 # ====================== GUI Wrapper ======================
@@ -502,7 +452,7 @@ class PacmanSimulation:
                 # Heuristic Movement (Strategy 1 & 2)
                 target = agent.move_heuristic(self.maze, self.ghosts)
                 proposed_positions[agent] = target
-                agent_intents[agent] = {'state': None, 'action': None, 'hit_wall': False} # Dummy for compatibility
+                agent_intents[agent] = {'state': None, 'action': None, 'hit_wall': False} 
 
         resolved = self.manager.negotiate(self.agents, proposed_positions, self.maze)
         
@@ -514,9 +464,13 @@ class PacmanSimulation:
                 self.maze.unlock(agent.current_lock)
                 agent.current_lock = None
             
+            # --- IMPROVEMENT 2: SHORT TERM MEMORY UPDATE ---
+            if actual_pos != agent.pos:
+                agent.recent_history.append(actual_pos)
+            
+            prev_pos = agent.pos
             agent.pos = actual_pos
             
-            # --- REWARD / SCORE LOGIC ---
             reward = -1 
             hit_ghost = False
             for g in self.ghosts:
@@ -533,8 +487,31 @@ class PacmanSimulation:
                     agent.score += 10
                     agent.update_energy(15) 
                     self.maze.pellets.remove(actual_pos)
-                elif actual_pos != agent.pos: reward -= 2 
                 
+                # --- IMPROVEMENT 1: HOT/COLD REWARD ---
+                elif actual_pos != prev_pos and self.strategy == 'Q_LEARNING':
+                    # Get new dist
+                    new_dist = agent.current_closest_target_dist # Pre-calculated in get_state or recal here
+                    # Actually, get_state is called BEFORE move. We need to recalc.
+                    # Quick calc:
+                    targets = list(self.maze.pellets) if self.maze.pellets else list(self.maze.shared_corridors)
+                    current_min_dist = float('inf')
+                    for t in targets:
+                        d = abs(t[0] - agent.pos[0]) + abs(t[1] - agent.pos[1])
+                        if d < current_min_dist: current_min_dist = d
+                    
+                    if current_min_dist < agent.prev_dist_to_target:
+                        reward += 1 # Getting warmer
+                    else:
+                        reward -= 1.5 # Getting colder
+                        
+                    agent.prev_dist_to_target = current_min_dist
+                
+                # --- IMPROVEMENT 2: LOOP PENALTY ---
+                if self.strategy == 'Q_LEARNING':
+                    if actual_pos in agent.recent_history and len(agent.recent_history) > 2:
+                        reward -= 10 # PUNISH LOOPS HARD
+
                 if proposed_positions[agent] != actual_pos and not agent_intents[agent]['hit_wall']: reward -= 2 
 
                 min_g_dist = float('inf')
@@ -572,7 +549,6 @@ if __name__ == "__main__":
     
     selected_strategy = None
     
-    # --- MENU LOOP ---
     while not selected_strategy:
         screen.fill(BLACK)
         screen.blit(font.render("Select Strategy:", True, WHITE), (50, 50))
@@ -588,9 +564,8 @@ if __name__ == "__main__":
                 elif event.key == pygame.K_2: selected_strategy = 'ALTERNATING_OFFER'
                 elif event.key == pygame.K_3: selected_strategy = 'Q_LEARNING'
 
-    pygame.quit() # Reset for sim
+    pygame.quit() 
     
-    # --- SIMULATION START ---
     sim = PacmanSimulation(selected_strategy)
     print(f"Starting {selected_strategy}. Press SPACE to Pause.")
     
