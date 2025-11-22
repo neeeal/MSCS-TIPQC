@@ -5,6 +5,7 @@ MCSCC 163/s2s*
 *ch.md
 *old_models/
 MITELEC101_*
+!MITELEC101_Master*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
