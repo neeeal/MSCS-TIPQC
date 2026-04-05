@@ -9,7 +9,7 @@ MITELEC101_*
 bayesian*/
 MCSCC 163\FINAL_PROJECT\saved_model_irish_english\
 *.zip
-*.pht
+*.pth
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
