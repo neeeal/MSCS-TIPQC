@@ -6,10 +6,11 @@ MCSCC 163/s2s*
 *old_models/
 MITELEC101_*
 !MITELEC101_Master*
-bayesian*/
+*bayesian*/
 MCSCC 163\FINAL_PROJECT\saved_model_irish_english\
 *.zip
 *.pth
+PSMDSSC*\classification_research\
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
