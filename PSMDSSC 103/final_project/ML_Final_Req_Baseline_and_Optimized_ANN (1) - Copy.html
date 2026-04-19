@@ -385,7 +385,7 @@
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [1]:</div>
+            <div class="cell-prompt input-prompt">In [2]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>!pip install scikeras==0.10.0 scikit-learn==1.5.2 tqdm kagglehub matplotlib seaborn imblearn keras_tuner tensorflow-addons==0.18.0</pre></div>
                 <div class="output-area">
@@ -441,7 +441,7 @@ Requirement already satisfied: certifi&gt;=2017.4.17 in c:\users\nealb\appdata\l
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [2]:</div>
+            <div class="cell-prompt input-prompt">In [3]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))</pre></div>
                 <div class="output-area">
@@ -462,7 +462,7 @@ Requirement already satisfied: certifi&gt;=2017.4.17 in c:\users\nealb\appdata\l
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [3]:</div>
+            <div class="cell-prompt input-prompt">In [4]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import kagglehub
 import pandas as pd
@@ -496,14 +496,14 @@ df_train = load_dataset("mohankrishnathalla/sleep-health-and-daily-performance-d
                         <div class="cell-prompt output-prompt"></div>
                         <div class="output-content">
                             <div class="output-stream">Warning: Looks like you're using an outdated `kagglehub` version (installed: 0.3.13), please consider upgrading to the latest version (1.0.0).
-Downloading from https://www.kaggle.com/api/v1/datasets/download/mohankrishnathalla/sleep-health-and-daily-performance-dataset?dataset_version_number=18...
+Downloading from https://www.kaggle.com/api/v1/datasets/download/mohankrishnathalla/sleep-health-and-daily-performance-dataset?dataset_version_number=19...
 </div>
                         </div>
                     </div>
                     <div class="output-wrapper">
                         <div class="cell-prompt output-prompt"></div>
                         <div class="output-content">
-                            <div class="output-stream output-stderr">100%|██████████| 4.07M/4.07M [00:01&lt;00:00, 2.45MB/s]</div>
+                            <div class="output-stream output-stderr">100%|██████████| 4.07M/4.07M [00:01&lt;00:00, 2.76MB/s]</div>
                         </div>
                     </div>
                     <div class="output-wrapper">
@@ -543,12 +543,12 @@ Downloading from https://www.kaggle.com/api/v1/datasets/download/mohankrishnatha
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [4]:</div>
+            <div class="cell-prompt input-prompt">In [5]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>df_train.head()</pre></div>
                 <div class="output-area">
                     <div class="output-wrapper">
-                        <div class="cell-prompt output-prompt">Out[4]:</div>
+                        <div class="cell-prompt output-prompt">Out[5]:</div>
                         <div class="output-content">
                             <div class="output-html"><div>
 <style scoped>
@@ -722,7 +722,7 @@ Downloading from https://www.kaggle.com/api/v1/datasets/download/mohankrishnatha
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [5]:</div>
+            <div class="cell-prompt input-prompt">In [6]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre># df_test.head()</pre></div>
             </div>
@@ -734,7 +734,7 @@ Downloading from https://www.kaggle.com/api/v1/datasets/download/mohankrishnatha
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [6]:</div>
+            <div class="cell-prompt input-prompt">In [7]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>print(df_train.info())
 # df_test.info()</pre></div>
@@ -795,7 +795,7 @@ None
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [7]:</div>
+            <div class="cell-prompt input-prompt">In [8]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import seaborn as sns
 import matplotlib.pyplot as plt
@@ -835,7 +835,7 @@ Name: proportion, dtype: float64
                     <div class="output-wrapper">
                         <div class="cell-prompt output-prompt"></div>
                         <div class="output-content">
-                            <div class="output-stream output-stderr">C:\Users\nealb\AppData\Local\Temp\ipykernel_27340\2371519322.py:13: FutureWarning: 
+                            <div class="output-stream output-stderr">C:\Users\nealb\AppData\Local\Temp\ipykernel_7036\2371519322.py:13: FutureWarning: 
 
 Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
 
@@ -853,7 +853,7 @@ Passing `palette` without assigning `hue` is deprecated and will be removed in v
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [8]:</div>
+            <div class="cell-prompt input-prompt">In [9]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre># import seaborn as sns
 # import matplotlib.pyplot as plt
@@ -881,7 +881,7 @@ Passing `palette` without assigning `hue` is deprecated and will be removed in v
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [9]:</div>
+            <div class="cell-prompt input-prompt">In [10]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>print(df_train.isna().sum())
 # print(df_test.isna().sum())</pre></div>
@@ -929,7 +929,7 @@ dtype: int64
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [10]:</div>
+            <div class="cell-prompt input-prompt">In [11]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>df_train.dropna(inplace=True)
 # df_test.dropna(inplace=True)
@@ -979,7 +979,7 @@ dtype: int64
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [11]:</div>
+            <div class="cell-prompt input-prompt">In [12]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>total_duplicates = df_train.duplicated().sum()
 print(f"Total duplicate rows: {total_duplicates}")</pre></div>
@@ -995,7 +995,7 @@ print(f"Total duplicate rows: {total_duplicates}")</pre></div>
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [12]:</div>
+            <div class="cell-prompt input-prompt">In [13]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre># total_duplicates = df_test.duplicated().sum()
 # print(f"Total duplicate rows: {total_duplicates}")</pre></div>
@@ -1008,7 +1008,7 @@ print(f"Total duplicate rows: {total_duplicates}")</pre></div>
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [13]:</div>
+            <div class="cell-prompt input-prompt">In [14]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>df_train.drop(columns=["person_id"], inplace=True)
 # df_test.drop(columns=["ID"], inplace=True)</pre></div>
@@ -1033,7 +1033,7 @@ print(f"Total duplicate rows: {total_duplicates}")</pre></div>
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [14]:</div>
+            <div class="cell-prompt input-prompt">In [15]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>def unique_vals(df, column):
   # Extract an array of unique values
@@ -1043,7 +1043,7 @@ print(f"Total duplicate rows: {total_duplicates}")</pre></div>
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [15]:</div>
+            <div class="cell-prompt input-prompt">In [16]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>unique_vals(df_train, "sleep_disorder_risk")</pre></div>
                 <div class="output-area">
@@ -1059,13 +1059,13 @@ print(f"Total duplicate rows: {total_duplicates}")</pre></div>
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [16]:</div>
+            <div class="cell-prompt input-prompt">In [17]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre># unique_vals(df_train, "Spending_Score")</pre></div>
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [52]:</div>
+            <div class="cell-prompt input-prompt">In [18]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import pandas as pd
 from sklearn.preprocessing import OrdinalEncoder, LabelEncoder
@@ -1195,12 +1195,12 @@ Target shape: (100000, 66)
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [53]:</div>
+            <div class="cell-prompt input-prompt">In [19]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>y_train_encoded</pre></div>
                 <div class="output-area">
                     <div class="output-wrapper">
-                        <div class="cell-prompt output-prompt">Out[53]:</div>
+                        <div class="cell-prompt output-prompt">Out[19]:</div>
                         <div class="output-content">
                             <div class="output-result"><pre>array([0, 1, 0, ..., 1, 0, 0], dtype=int64)</pre></div>
                         </div>
@@ -1209,7 +1209,7 @@ Target shape: (100000, 66)
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [54]:</div>
+            <div class="cell-prompt input-prompt">In [20]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre># # Separate features (X) and target (y) prior to transformations
 # X = df_test.drop('target', axis=1)
@@ -1245,7 +1245,7 @@ Target shape: (100000, 66)
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [72]:</div>
+            <div class="cell-prompt input-prompt">In [21]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre># Select the first 10 and last 10 columns
 selected_columns = list(X_train_encoded.columns[20:25]) + list(X_train_encoded.columns[-5:])
@@ -1267,7 +1267,7 @@ plt.show()</pre></div>
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [21]:</div>
+            <div class="cell-prompt input-prompt">In [22]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import numpy as np
 # Calculate the absolute correlation matrix
@@ -1304,7 +1304,7 @@ X_train_encoded = X_train_encoded.drop(columns=features_to_drop)
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [22]:</div>
+            <div class="cell-prompt input-prompt">In [23]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import pandas as pd
 
@@ -1396,7 +1396,7 @@ kurtosis             1.052910
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [23]:</div>
+            <div class="cell-prompt input-prompt">In [24]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>print(X_train_encoded.head())</pre></div>
                 <div class="output-area">
@@ -1460,7 +1460,7 @@ kurtosis             1.052910
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [24]:</div>
+            <div class="cell-prompt input-prompt">In [25]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import pandas as pd
 import numpy as np
@@ -1552,7 +1552,7 @@ dtype: float64
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [25]:</div>
+            <div class="cell-prompt input-prompt">In [26]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>from sklearn.model_selection import train_test_split
 
@@ -1579,7 +1579,7 @@ Test set size: 20000 samples
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [26]:</div>
+            <div class="cell-prompt input-prompt">In [27]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import pandas as pd
 import numpy as np
@@ -1644,7 +1644,7 @@ print(f"X_train_scaled dtype: {X_train_scaled.dtype}")</pre></div>
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [27]:</div>
+            <div class="cell-prompt input-prompt">In [28]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import pandas as pd
 from imblearn.over_sampling import SMOTE
@@ -1691,7 +1691,7 @@ Name: count, dtype: int64
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [28]:</div>
+            <div class="cell-prompt input-prompt">In [29]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import pandas as pd
 import seaborn as sns
@@ -1721,12 +1721,12 @@ plt.show()</pre></div>
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [29]:</div>
+            <div class="cell-prompt input-prompt">In [30]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>y_train_resampled[:10]</pre></div>
                 <div class="output-area">
                     <div class="output-wrapper">
-                        <div class="cell-prompt output-prompt">Out[29]:</div>
+                        <div class="cell-prompt output-prompt">Out[30]:</div>
                         <div class="output-content">
                             <div class="output-result"><pre>array([1, 0, 0, 1, 0, 1, 1, 1, 0, 0], dtype=int64)</pre></div>
                         </div>
@@ -2281,7 +2281,7 @@ baseline_metrics.to_csv('baseline_model_metrics.csv', index=False)</pre></div>
             </div>
         </div>
         <div class="cell cell-code">
-            <div class="cell-prompt input-prompt">In [30]:</div>
+            <div class="cell-prompt input-prompt">In [31]:</div>
             <div class="cell-content">
                 <div class="input-area"><pre>import os
 import pandas as pd
@@ -2425,6 +2425,76 @@ tuner.search(
                         <div class="output-content">
                             <div class="output-stream">Reloading Tuner from bayesian_tuning_v4\customer_seg_final\tuner0.json
 Starting final Bayesian Optimization...
+</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="cell cell-code">
+            <div class="cell-prompt input-prompt">In [32]:</div>
+            <div class="cell-content">
+                <div class="input-area"><pre># 5. Extract and Export Top 5 Configurations
+print("Extracting top 5 configurations...")
+best_hps = tuner.get_best_hyperparameters(num_trials=5)
+
+config_list = []
+for index, hp in enumerate(best_hps):
+    config_dict = hp.values.copy()
+    config_dict['rank'] = index + 1
+    config_list.append(config_dict)
+
+df_top_configs = pd.DataFrame(config_list)
+
+# Reorder columns to place the rank first
+cols = ['rank'] + [col for col in df_top_configs.columns if col != 'rank']
+df_top_configs = df_top_configs[cols]
+
+export_path = 'top_5_configurations.csv'
+df_top_configs.to_csv(export_path, index=False)
+print(f"Top 5 configurations successfully exported to {export_path}")</pre></div>
+                <div class="output-area">
+                    <div class="output-wrapper">
+                        <div class="cell-prompt output-prompt"></div>
+                        <div class="output-content">
+                            <div class="output-stream">Extracting top 5 configurations...
+Top 5 configurations successfully exported to top_5_configurations.csv
+</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="cell cell-code">
+            <div class="cell-prompt input-prompt">In [33]:</div>
+            <div class="cell-content">
+                <div class="input-area"><pre>print("Extracting all configurations...")
+num_total_trials = len(tuner.oracle.trials)
+all_best_trials = tuner.oracle.get_best_trials(num_trials=num_total_trials)
+
+config_list = []
+for index, trial in enumerate(all_best_trials):
+    config_dict = trial.hyperparameters.values.copy()
+    config_dict['rank'] = index + 1
+    config_dict['trial_id'] = trial.trial_id
+    config_dict['val_loss'] = trial.score
+    config_list.append(config_dict)
+
+df_all_configs = pd.DataFrame(config_list)
+
+# Reorder columns to place rank, trial_id, and objective score first
+cols = ['rank', 'trial_id', 'val_loss'] + [col for col in df_all_configs.columns if col not in ['rank', 'trial_id', 'val_loss']]
+df_all_configs = df_all_configs[cols]
+
+export_path = 'all_configurations.csv'
+df_all_configs.to_csv(export_path, index=False)
+print(f"All {num_total_trials} configurations successfully exported to {export_path}")</pre></div>
+                <div class="output-area">
+                    <div class="output-wrapper">
+                        <div class="cell-prompt output-prompt"></div>
+                        <div class="output-content">
+                            <div class="output-stream">Extracting all configurations...
+All 50 configurations successfully exported to all_configurations.csv
 </div>
                         </div>
                     </div>
